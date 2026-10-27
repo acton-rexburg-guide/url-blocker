@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>URL Filter status</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popup">
+  <h1>URL Filter</h1>
+  <dl>
+    <dt>Settings from</dt><dd id="source">…</dd>
+    <dt>Mode</dt><dd id="mode">…</dd>
+    <dt>Schedules on</dt><dd id="schedules">…</dd>
+    <dt>This tab</dt><dd id="trusted">…</dd>
+  </dl>
+  <p id="error" class="error" hidden></p>
+  <section id="dev" hidden>
+    <h1>Test config (unpacked installs only)</h1>
+    <textarea id="devConfig" spellcheck="false"></textarea>
+    <div class="buttons"><button id="saveDev" type="button">Apply</button></div>
+  </section>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

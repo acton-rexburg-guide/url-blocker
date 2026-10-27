@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --text:#1f2328; --muted:#59636e; --accent:#1a73e8; --border:#d0d7de; --ok:#1a7f37; --err:#d1242f; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#15171a; --card:#1f2227; --text:#e6e8eb; --muted:#9aa4af; --accent:#8ab4f8; --border:#3a3f46; --ok:#57ab5a; --err:#f47067; } }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:16px; border-bottom:1px solid var(--border); background:var(--card); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    header h1 { font-size:18px; margin:0; }
+    main { max-width:960px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+    section { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+    h2 { font-size:15px; margin:0 0 10px; }
+    label { display:block; margin:10px 0 4px; font-weight:600; }
+    .hint { color:var(--muted); font-weight:400; font-size:13px; }
+    input[type=text], select, textarea { width:100%; font:inherit; padding:6px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); }
+    textarea { min-height:110px; font-family:ui-monospace, monospace; font-size:13px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .row > * { flex:1 1 200px; }
+    .inline { display:flex; gap:6px; align-items:center; font-weight:400; margin:6px 0; }
+    .inline input { margin:0; }
+    button { font:inherit; padding:7px 14px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:var(--card); cursor:pointer; }
+    button.secondary { background:transparent; color:var(--accent); }
+    button.danger { background:transparent; color:var(--err); border-color:var(--err); }
+    button:disabled { opacity:.5; cursor:default; }
+    .buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .schedule { border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:10px; }
+    .days { display:flex; gap:10px; flex-wrap:wrap; }
+    #status { position:sticky; bottom:0; padding:10px 16px; background:var(--card); border-top:1px solid var(--border); min-height:20px; }
+    #status.ok { color:var(--ok); } #status.err { color:var(--err); }
+    pre { white-space:pre-wrap; word-break:break-all; font-size:12px; background:var(--bg); padding:10px; border-radius:6px; }
+    [hidden] { display:none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>URL Filter Admin</h1>
+    <span class="hint" id="who">Loading…</span>
+  </header>
+  <main>
+    <section id="setup">
+      <h2>1. Setup</h2>
+      <label for="extId">Extension ID <span class="hint">from the Chrome Web Store listing or chrome://extensions</span></label>
+      <div class="row">
+        <input type="text" id="extId" placeholder="abcdefghijklmnopabcdefghijklmnop">
+        <div style="flex:0 0 auto"><button id="saveExt" type="button">Save</button></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Who these settings apply to</h2>
+      <div class="row">
+        <div style="flex:0 0 220px">
+          <label class="inline"><input type="radio" name="targetType" value="ou" checked> Organizational unit</label>
+          <label class="inline"><input type="radio" name="targetType" value="group"> Group</label>
+        </div>
+        <div>
+          <input type="text" id="targetFilter" placeholder="Filter…">
+          <select id="target" size="6" style="margin-top:6px"></select>
+        </div>
+      </div>
+      <p class="hint" id="targetInfo">Group settings override OU settings. Sub-OUs inherit from their parent until you save settings on them.</p>
+      <div class="buttons">
+        <button id="load" type="button" class="secondary">Load current settings</button>
+        <button id="import" type="button" class="secondary">Import Admin console URL lists</button>
+      </div>
+    </section>
+
+    <section id="editor">
+      <h2>3. Rules</h2>
+      <label>Mode</label>
+      <label class="inline"><input type="radio" name="mode" value="allowlist"> Allowlist: block everything except the allowed sites</label>
+      <label class="inline"><input type="radio" name="mode" value="blocklist" checked> Blocklist: allow everything except the blocked sites</label>
+
+      <div class="row">
+        <div>
+          <label for="allow">Allowed sites <span class="hint">one per line; wins over blocked</span></label>
+          <textarea id="allow" placeholder="classroom.google.com&#10;khanacademy.org&#10;youtube.com/edu"></textarea>
+        </div>
+        <div>
+          <label for="block">Blocked sites</label>
+          <textarea id="block" placeholder="games.com&#10;youtube.com/shorts"></textarea>
+        </div>
+      </div>
+      <p class="hint">A domain covers its subdomains (<code>google.com</code> includes <code>docs.google.com</code>). Add a path to match only part of a site (<code>youtube.com/shorts</code>).</p>
+
+      <label for="sources">Approved sources <span class="hint">any link opened from these sites is allowed, whatever its domain</span></label>
+      <textarea id="sources" placeholder="classroom.google.com&#10;canvas.instructure.com" style="min-height:70px"></textarea>
+      <label class="inline"><input type="radio" name="scope" value="site" checked> Keep the whole linked site open in that tab</label>
+      <label class="inline"><input type="radio" name="scope" value="link"> Allow only the linked page itself</label>
+
+      <label>Safety</label>
+      <label class="inline"><input type="checkbox" id="protectEssentials" checked> Never block Google sign-in and account pages (recommended, even when google.com is blocked)</label>
+      <label class="inline"><input type="checkbox" id="blockEmbeds"> Also filter embedded frames (e.g. YouTube players inside other sites)</label>
+
+      <div class="row">
+        <div>
+          <label for="timezone">Time zone for schedules <span class="hint">blank = each device's clock</span></label>
+          <input type="text" id="timezone" list="tzList" placeholder="America/Denver">
+          <datalist id="tzList"><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Phoenix</option><option>America/Los_Angeles</option><option>America/Anchorage</option><option>Pacific/Honolulu</option><option>UTC</option></datalist>
+        </div>
+        <div>
+          <label for="blockMessage">Blocked-page message</label>
+          <input type="text" id="blockMessage" placeholder="This site isn't available during school hours.">
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Schedules <span class="hint">change the rules on certain days and times</span></h2>
+      <p class="hint">While a schedule is on, its sites are added to the lists above and it can switch the mode. If several are on, the one lowest in this list decides the mode. An end time earlier than the start runs past midnight.</p>
+      <div id="schedules"></div>
+      <div class="buttons"><button id="addSchedule" type="button" class="secondary">+ Add schedule</button></div>
+    </section>
+
+    <section>
+      <h2>5. Save</h2>
+      <label class="inline"><input type="checkbox" id="forceInstall" checked> Also force-install the extension for this OU / group</label>
+      <div class="buttons">
+        <button id="save" type="button">Save to selected OU / group</button>
+        <button id="preview" type="button" class="secondary">Show JSON</button>
+        <button id="clear" type="button" class="danger">Remove settings from this OU / group</button>
+      </div>
+      <pre id="json" hidden></pre>
+    </section>
+  </main>
+  <div id="status"></div>
+
+  <template id="scheduleTpl">
+    <div class="schedule">
+      <div class="row">
+        <div><label>Name</label><input type="text" data-k="name" placeholder="School hours"></div>
+        <div style="flex:0 1 120px"><label>Start</label><input type="text" data-k="start" placeholder="08:00"></div>
+        <div style="flex:0 1 120px"><label>End</label><input type="text" data-k="end" placeholder="15:00"></div>
+        <div style="flex:0 1 200px"><label>Mode while on</label>
+          <select data-k="mode"><option value="">No change</option><option value="allowlist">Allowlist</option><option value="blocklist">Blocklist</option></select>
+        </div>
+      </div>
+      <label>Days</label>
+      <div class="days"></div>
+      <div class="row">
+        <div><label>Also allow</label><textarea data-k="allow" style="min-height:70px"></textarea></div>
+        <div><label>Also block</label><textarea data-k="block" style="min-height:70px"></textarea></div>
+      </div>
+      <div class="buttons"><button type="button" class="danger" data-remove>Remove schedule</button></div>
+    </div>
+  </template>
+
+  <script>
+    const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+    const $ = (id) => document.getElementById(id);
+    let data = { orgUnits: [], groups: [] };
+
+    function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
+    function call(fn, ...args) {
+      return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+    }
+    async function run(label, fn) {
+      status(label + '…');
+      document.querySelectorAll('button').forEach((b) => (b.disabled = true));
+      try { const msg = await fn(); status(msg || 'Done.', 'ok'); }
+      catch (e) { status(e.message || String(e), 'err'); }
+      finally { document.querySelectorAll('button').forEach((b) => (b.disabled = false)); }
+    }
+
+    const lines = (id) => $(id).value.split('\n').map((s) => s.trim()).filter(Boolean);
+    const radio = (name) => document.querySelector(`input[name=${name}]:checked`).value;
+    const setRadio = (name, v) => { const el = document.querySelector(`input[name=${name}][value="${v}"]`); if (el) el.checked = true; };
+
+    function targetType() { return radio('targetType') === 'group' ? 'group' : 'ou'; }
+    function renderTargets() {
+      const q = $('targetFilter').value.toLowerCase();
+      const items = targetType() === 'group'
+        ? data.groups.map((g) => ({ id: g.id, label: `${g.name} <${g.email}>` }))
+        : data.orgUnits.map((o) => ({ id: o.id, label: o.path === '/' ? '/ (whole organization)' : o.path }));
+      const previous = $('target').value;
+      $('target').replaceChildren(...items.filter((i) => i.label.toLowerCase().includes(q)).map((i) => {
+        const opt = document.createElement('option'); opt.value = i.id; opt.textContent = i.label; return opt;
+      }));
+      $('target').value = previous;
+    }
+    function target() {
+      const id = $('target').value;
+      if (!id) throw new Error('Pick an organizational unit or group first.');
+      return { type: targetType(), id, label: $('target').selectedOptions[0].textContent };
+    }
+
+    function addSchedule(s = {}) {
+      const node = $('scheduleTpl').content.firstElementChild.cloneNode(true);
+      node.querySelectorAll('[data-k]').forEach((el) => {
+        const v = s[el.dataset.k];
+        el.value = Array.isArray(v) ? v.join('\n') : v || '';
+      });
+      const days = node.querySelector('.days');
+      DAYS.forEach(([k, label]) => {
+        const l = document.createElement('label'); l.className = 'inline';
+        const c = document.createElement('input'); c.type = 'checkbox'; c.value = k;
+        c.checked = s.days ? s.days.includes(k) : !['sat', 'sun'].includes(k);
+        l.append(c, ' ' + label); days.append(l);
+      });
+      node.querySelector('[data-remove]').addEventListener('click', () => node.remove());
+      $('schedules').append(node);
+    }
+
+    function readForm() {
+      return {
+        mode: radio('mode'),
+        allow: lines('allow'),
+        block: lines('block'),
+        approvedSources: lines('sources'),
+        approvedSourceScope: radio('scope'),
+        protectEssentials: $('protectEssentials').checked,
+        blockEmbeds: $('blockEmbeds').checked,
+        timezone: $('timezone').value.trim(),
+        blockMessage: $('blockMessage').value.trim(),
+        schedules: [...document.querySelectorAll('#schedules .schedule')].map((n) => {
+          const get = (k) => n.querySelector(`[data-k=${k}]`).value;
+          const list = (k) => get(k).split('\n').map((s) => s.trim()).filter(Boolean);
+          return {
+            name: get('name').trim(), start: get('start').trim(), end: get('end').trim(), mode: get('mode'),
+            days: [...n.querySelectorAll('.days input:checked')].map((c) => c.value),
+            allow: list('allow'), block: list('block'),
+          };
+        }),
+      };
+    }
+
+    function fillForm(c) {
+      c = c || {};
+      setRadio('mode', c.mode === 'allowlist' ? 'allowlist' : 'blocklist');
+      $('allow').value = (c.allow || []).join('\n');
+      $('block').value = (c.block || []).join('\n');
+      $('sources').value = (c.approvedSources || []).join('\n');
+      setRadio('scope', c.approvedSourceScope === 'link' ? 'link' : 'site');
+      $('protectEssentials').checked = c.protectEssentials !== false;
+      $('blockEmbeds').checked = c.blockEmbeds === true;
+      $('timezone').value = c.timezone || '';
+      $('blockMessage').value = c.blockMessage || '';
+      $('schedules').replaceChildren();
+      (c.schedules || []).forEach(addSchedule);
+    }
+
+    document.querySelectorAll('input[name=targetType]').forEach((r) => r.addEventListener('change', renderTargets));
+    $('targetFilter').addEventListener('input', renderTargets);
+    $('addSchedule').addEventListener('click', () => addSchedule());
+
+    $('saveExt').addEventListener('click', () => run('Saving extension ID', async () => {
+      $('extId').value = await call('setExtensionId', $('extId').value);
+      return 'Extension ID saved.';
+    }));
+
+    $('load').addEventListener('click', () => run('Loading', async () => {
+      const t = target();
+      const r = await call('loadTargetConfig', t);
+      fillForm(r.config);
+      const installed = r.installType === 'FORCED' ? 'force-installed' : `install type: ${r.installType}`;
+      if (!r.config) return `${t.label} has no URL Filter settings yet (${installed}).`;
+      return r.setHere ? `Loaded settings saved on ${t.label} (${installed}).` : `Loaded settings ${t.label} inherits from a parent OU (${installed}). Saving creates its own copy.`;
+    }));
+
+    $('import').addEventListener('click', () => run('Importing', async () => {
+      const r = await call('importNativeLists', target());
+      const strip = (l) => l.map((s) => s.trim()).filter((s) => s && s !== '*');
+      if (r.block.some((s) => s.trim() === '*')) setRadio('mode', 'allowlist');
+      $('allow').value = [...new Set([...lines('allow'), ...strip(r.allow)])].join('\n');
+      $('block').value = [...new Set([...lines('block'), ...strip(r.block)])].join('\n');
+      return `Imported ${r.allow.length} allowed and ${r.block.length} blocked entries. Review, then Save.`;
+    }));
+
+    $('preview').addEventListener('click', () => {
+      $('json').hidden = false;
+      $('json').textContent = JSON.stringify(readForm(), null, 2);
+    });
+
+    $('save').addEventListener('click', () => run('Saving', async () => {
+      const t = target();
+      const saved = await call('saveTargetConfig', t, readForm(), $('forceInstall').checked);
+      fillForm(saved);
+      return `Saved to ${t.label}. Devices pick up changes within a few minutes (or right away after a policy refresh at chrome://policy).`;
+    }));
+
+    $('clear').addEventListener('click', () => {
+      let t;
+      try { t = target(); } catch (e) { return status(e.message, 'err'); }
+      if (!confirm(`Remove URL Filter settings from ${t.label}? It will inherit from its parent OU again.`)) return;
+      run('Removing', async () => { await call('clearTargetConfig', t); return `Removed settings from ${t.label}.`; });
+    });
+
+    run('Loading directory', async () => {
+      data = await call('getBootstrap');
+      $('who').textContent = `Signed in as ${data.user}`;
+      $('extId').value = data.extensionId;
+      renderTargets();
+      return data.extensionId ? 'Ready. Pick an OU or group and load its settings.' : 'Start by saving the extension ID.';
+    });
+  </script>
+</body>
+</html>

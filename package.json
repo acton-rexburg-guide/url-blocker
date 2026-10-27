@@ -1,0 +1,9 @@
+{
+  "name": "url-blocker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "package": "cd extension && zip -r ../url-filter-extension.zip . -x '.*'"
+  }
+}

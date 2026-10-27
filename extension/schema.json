@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "properties": {
+    "mode": {
+      "title": "Filtering mode",
+      "description": "\"allowlist\" blocks every site except the allowed ones. \"blocklist\" allows every site except the blocked ones.",
+      "type": "string"
+    },
+    "allow": {
+      "title": "Allowed sites",
+      "description": "Domains (example.com, includes subdomains) or domain + path prefixes (example.com/docs).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "block": {
+      "title": "Blocked sites",
+      "description": "Domains or domain + path prefixes. Allowed sites win over blocked sites.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "approvedSources": {
+      "title": "Approved sources",
+      "description": "Any link opened from these sites is allowed, whatever its domain.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "approvedSourceScope": {
+      "title": "Approved source scope",
+      "description": "\"site\" keeps the whole destination site open in that tab. \"link\" allows only the page that was opened.",
+      "type": "string"
+    },
+    "protectEssentials": {
+      "title": "Never block essential Google sign-in pages",
+      "type": "boolean"
+    },
+    "blockEmbeds": {
+      "title": "Also filter embedded frames",
+      "type": "boolean"
+    },
+    "timezone": {
+      "title": "Time zone for schedules",
+      "description": "IANA name such as America/Denver. Empty uses the device clock.",
+      "type": "string"
+    },
+    "blockMessage": {
+      "title": "Message shown on the blocked page",
+      "type": "string"
+    },
+    "schedules": {
+      "title": "Schedules",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "days": { "type": "array", "items": { "type": "string" } },
+          "start": { "type": "string" },
+          "end": { "type": "string" },
+          "mode": { "type": "string" },
+          "allow": { "type": "array", "items": { "type": "string" } },
+          "block": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

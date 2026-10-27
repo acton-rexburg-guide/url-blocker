@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Site blocked</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page">
+  <main class="card">
+    <h1>This site is blocked</h1>
+    <p class="url" id="url"></p>
+    <p id="message">Your organization doesn't allow this site right now.</p>
+    <p id="next" hidden></p>
+    <div class="buttons">
+      <button id="back" type="button">Go back</button>
+      <button id="retry" type="button" class="secondary">Try again</button>
+    </div>
+  </main>
+  <script type="module" src="blocked.js"></script>
+</body>
+</html>
