@@ -25,18 +25,40 @@ There are two parts:
 
 ## Installation
 
-You'll do this once. Budget about an hour, plus Chrome Web Store review time.
+You'll do this once. Budget about an hour.
 
-### Step 1: Publish the extension privately to your domain
+### Step 1: Host the extension on GitHub Pages (no Web Store)
 
-1. Build the upload file. From this repo, run `npm run package`, which creates `url-filter-extension.zip`. Or zip the *contents* of the `extension/` folder yourself, with `manifest.json` at the top level of the zip.
-2. Open the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole) while signed in with a Workspace account. A one-time developer registration fee applies.
-3. Click **New item** and upload the zip.
-4. Under **Distribution → Visibility**, choose **Private**, then **"Only trusted testers / people in my domain"**. Only your organization can install it.
-5. Fill in the required listing fields and submit. Private items still go through review, which usually takes a few days.
-6. Copy the **item ID**: 32 letters, shown on the item's page. That's your **extension ID**.
+The extension is self-hosted from this repo. Every push to `main` that changes `extension/` runs the **Publish extension** GitHub Action (`.github/workflows/publish-extension.yml`). It signs the extension and publishes it to GitHub Pages:
 
-> For a quick test before publishing, see [Testing locally](#testing-locally).
+- `https://acton-rexburg-guide.github.io/url-blocker/updates.xml`: the update manifest Chromebooks check
+- `https://acton-rexburg-guide.github.io/url-blocker/url-filter.crx`: the signed extension
+- `https://acton-rexburg-guide.github.io/url-blocker/`: a page showing the current version and extension ID
+
+The version number goes up automatically on every publish, so Chromebooks pick up changes on their next update check (usually within a few hours; `chrome://extensions` → **Update** forces it).
+
+One-time setup:
+
+1. **Add the signing key as a secret.** Self-hosted extensions are signed with a private key, and the key determines the extension ID.
+   - In the repo, open **Settings → Secrets and variables → Actions → New repository secret**.
+   - Name it `EXTENSION_PRIVATE_KEY` and paste the whole key file, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines.
+   - **Keep a backup of the key somewhere private.** If it's lost, the extension gets a new ID and has to be re-added in the Admin console.
+   - To make a new key instead, run `npm run keygen`. It writes `extension-key.pem` and prints the ID. `*.pem` files are git-ignored. Never commit the key: the repo is public.
+2. **Turn on Pages.** Go to **Settings → Pages**, set **Source** to **GitHub Actions**.
+3. **Publish.** Go to **Actions → Publish extension → Run workflow** (or push a change to `extension/`). When it's green, open the Pages URL above to confirm the version and **extension ID**.
+
+The extension ID for the key generated with this setup is **`chnnefiligaknogfjhfhbmiahinkldmf`**.
+
+### Step 1b: Force-install it from the Admin console
+
+1. Open **Devices → Chrome → Apps & extensions → Users & browsers** and select the OU to cover. Use the top-level OU to cover everyone, since sub-OUs inherit.
+2. Click the yellow **+** → **Add Chrome app or extension by ID**.
+3. Paste the extension ID, choose **From a custom URL**, enter `https://acton-rexburg-guide.github.io/url-blocker/updates.xml`, and click **Save**.
+4. Set its installation policy to **Force install** (and **Pin to browser toolbar** if you want students to see its status icon).
+
+To limit it to certain groups instead, do the same on the **Groups** tab for each group.
+
+> For a quick test without any of this, see [Testing locally](#testing-locally).
 
 ### Step 2: Install the admin dashboard
 
@@ -73,7 +95,7 @@ Under **Devices → Chrome → Settings → Users & browsers**, for the OUs you 
 ### Step 4: Set up the first OU
 
 1. Open the dashboard, paste the **extension ID** in **Setup**, and click **Save**.
-2. Pick a **pilot OU** (or test group), write your rules, keep **Also force-install the extension** checked, and click **Save**.
+2. Pick a **pilot OU** (or test group) where the extension is force-installed (Step 1b), write your rules, and click **Save**.
 3. On a pilot Chromebook, open `chrome://policy`, click **Reload policies**, and check that "Workspace URL Filter" appears in `chrome://extensions`. Click the extension's toolbar icon to see which mode and schedules are active.
 4. Once it works, roll out to more OUs. If you're replacing your old Admin console URL blocking, clear those lists after migrating them (see below) so the two don't fight.
 
@@ -134,11 +156,12 @@ How schedules combine:
 
 ### 5. Save
 
-- **Save** writes the settings to the selected OU or group, and force-installs the extension there if that box is checked. Devices pick up the change within minutes. `chrome://policy` → **Reload policies** applies it at once.
+- **Save** writes the settings to the selected OU or group. Devices pick up the change within minutes. `chrome://policy` → **Reload policies** applies it at once.
+- **Also set the extension to force-install here** is off by default. The Admin console setup in Step 1b already covers OUs that inherit it. Tick it only for a group, or an OU that overrides the install setting, and only after the extension has been added there by custom URL.
 - **Show JSON** shows exactly what gets stored.
 - **Remove settings** deletes this OU's or group's own settings so it inherits again.
 
-**If saving to a group fails** (Google sometimes requires an app to be added to a group in the Admin console first): open **Devices → Chrome → Apps & extensions → Users & browsers → Groups**, select the group, and add the extension by ID as **Force install**. Then save again. As a fallback, you can paste the **Show JSON** output into that app's **Policy for extensions** box.
+**If saving to a group fails**, the extension usually hasn't been added to that group yet. Add it on the **Groups** tab as in Step 1b, then save again. As a fallback, you can paste the **Show JSON** output into the extension's **Policy for extensions** box in the Admin console.
 
 ---
 

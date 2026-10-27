@@ -42,7 +42,7 @@
   <main>
     <section id="setup">
       <h2>1. Setup</h2>
-      <label for="extId">Extension ID <span class="hint">from the Chrome Web Store listing or chrome://extensions</span></label>
+      <label for="extId">Extension ID <span class="hint">shown on the extension's GitHub Pages site</span></label>
       <div class="row">
         <input type="text" id="extId" placeholder="abcdefghijklmnopabcdefghijklmnop">
         <div style="flex:0 0 auto"><button id="saveExt" type="button">Save</button></div>
@@ -117,7 +117,7 @@
 
     <section>
       <h2>5. Save</h2>
-      <label class="inline"><input type="checkbox" id="forceInstall" checked> Also force-install the extension for this OU / group</label>
+      <label class="inline"><input type="checkbox" id="forceInstall"> Also set the extension to force-install here <span class="hint">(only needed for a group, or an OU that overrides the install setting; it must already be added by custom URL, see README)</span></label>
       <div class="buttons">
         <button id="save" type="button">Save to selected OU / group</button>
         <button id="preview" type="button" class="secondary">Show JSON</button>

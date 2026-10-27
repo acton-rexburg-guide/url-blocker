@@ -1,0 +1,48 @@
+# Signs the extension and publishes the .crx + updates.xml to GitHub Pages,
+# where Chromebooks install and update it from. Needs the EXTENSION_PRIVATE_KEY
+# repository secret and Pages set to deploy from GitHub Actions (see README).
+name: Publish extension
+
+on:
+  push:
+    branches: [main]
+    paths: ['extension/**', 'scripts/**', '.github/workflows/publish-extension.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Build signed extension
+        run: node scripts/build.mjs "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" dist
+        env:
+          EXTENSION_PRIVATE_KEY: ${{ secrets.EXTENSION_PRIVATE_KEY }}
+          BUILD_NUMBER: ${{ github.run_number }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

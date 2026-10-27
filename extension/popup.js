@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const SOURCES = { admin: 'Google Admin console', developer: 'Local test config', none: 'Not configured (nothing blocked)' };
+const SOURCES = { admin: 'Google Admin console', developer: 'Local test config', none: 'Not configured (nothing blocked)', pending: 'Waiting for policy to load…' };
 
 async function render() {
   const { status, tabs = {} } = await chrome.storage.session.get(['status', 'tabs']);

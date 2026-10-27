@@ -22,6 +22,12 @@ function serial(fn) {
 
 async function applyRules() {
   const { config, source } = await getConfig();
+  if (source === 'pending') {
+    // Policy hasn't loaded yet: keep the rules already in place and retry.
+    configPromise = null;
+    setTimeout(() => serial(applyRules), 10000);
+    return;
+  }
   const status = { source, mode: null, activeSchedules: [], error: null, updatedAt: Date.now() };
   let rules = [];
   if (config) {
@@ -116,7 +122,10 @@ async function clearTabTrust() {
 chrome.runtime.onInstalled.addListener(() => serial(init));
 chrome.runtime.onStartup.addListener(() => serial(init));
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'tick') serial(applyRules);
+  if (alarm.name !== 'tick') return;
+  // Re-read settings each minute in case a policy change event was missed.
+  configPromise = null;
+  serial(applyRules);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

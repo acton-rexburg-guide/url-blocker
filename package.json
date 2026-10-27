@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "package": "cd extension && zip -r ../url-filter-extension.zip . -x '.*'"
+    "keygen": "node scripts/keygen.mjs",
+    "build": "node scripts/build.mjs"
   }
 }
