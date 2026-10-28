@@ -28,7 +28,7 @@
     .buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
     .schedule { border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:10px; }
     .days { display:flex; gap:10px; flex-wrap:wrap; }
-    #status { position:sticky; bottom:0; padding:10px 16px; background:var(--card); border-top:1px solid var(--border); min-height:20px; }
+    #status { position:sticky; top:0; z-index:1; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--border); min-height:20px; font-weight:600; }
     #status.ok { color:var(--ok); } #status.err { color:var(--err); }
     pre { white-space:pre-wrap; word-break:break-all; font-size:12px; background:var(--bg); padding:10px; border-radius:6px; }
     [hidden] { display:none !important; }
@@ -39,6 +39,7 @@
     <h1>URL Filter Admin</h1>
     <span class="hint" id="who">Loading…</span>
   </header>
+  <div id="status"></div>
   <main>
     <section id="setup">
       <h2>1. Setup</h2>
@@ -126,7 +127,6 @@
       <pre id="json" hidden></pre>
     </section>
   </main>
-  <div id="status"></div>
 
   <template id="scheduleTpl">
     <div class="schedule">
@@ -154,8 +154,17 @@
     let data = { orgUnits: [], groups: [] };
 
     function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
+    // google.script.run can fail without calling either handler (most often when
+    // the browser is signed in to more than one Google account), so time out.
     function call(fn, ...args) {
-      return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(
+          'No answer from the server after 60 seconds. If this browser is signed in to more than one Google account, '
+          + 'open the dashboard in an incognito window or a Chrome profile signed in only to your Workspace admin account.')), 60000);
+        google.script.run
+          .withSuccessHandler((r) => { clearTimeout(timer); resolve(r); })
+          .withFailureHandler((e) => { clearTimeout(timer); reject(e); })[fn](...args);
+      });
     }
     async function run(label, fn) {
       status(label + '…');
@@ -289,7 +298,15 @@
     });
 
     run('Loading directory', async () => {
-      data = await call('getBootstrap');
+      try {
+        data = await call('getBootstrap');
+      } catch (e) {
+        $('who').textContent = 'Could not load';
+        // Still show the saved extension ID, which doesn't need the directory.
+        call('getExtensionId').then((id) => { $('extId').value = id; }, () => {});
+        throw new Error('Could not load your OUs and groups: ' + (e.message || e)
+          + ' Check that the Admin SDK API is enabled in the linked Cloud project and that you are signed in as a Workspace admin.');
+      }
       $('who').textContent = `Signed in as ${data.user}`;
       $('extId').value = data.extensionId;
       renderTargets();

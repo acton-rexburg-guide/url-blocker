@@ -81,6 +81,12 @@ You need a Workspace **super admin**, or an admin with Chrome management and rea
 
 Because the dashboard runs as the person using it, a non-admin who opens it can't change anything. Google rejects their requests.
 
+**If the dashboard stays on "Loading…"** or Save does nothing, read the status bar under the title, then check:
+- **More than one Google account signed in.** Apps Script web apps often fail silently then. Open the dashboard in an incognito window, or a Chrome profile signed in only to your Workspace admin account.
+- **Admin SDK API and Chrome Policy API** are enabled in the linked Cloud project (Step 2.1), and the Apps Script project is linked to it.
+- **After pasting new code, redeploy.** The web app URL serves the deployed version, not the editor's. Use **Deploy → Manage deployments → Edit → Version: New version → Deploy**.
+- In the Apps Script editor, **Executions** (left sidebar) shows the actual error for each failed call.
+
 ### Step 3: Lock down bypasses (Admin console)
 
 Under **Devices → Chrome → Settings → Users & browsers**, for the OUs you filter, set:
