@@ -149,6 +149,8 @@
   </template>
 
   <script>
+    // Apps Script rewrites this script before serving it and breaks template
+    // literals (a "//" inside one is taken as a comment), so use plain strings.
     const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
     const $ = (id) => document.getElementById(id);
     let data = { orgUnits: [], groups: [] };
@@ -175,14 +177,14 @@
     }
 
     const lines = (id) => $(id).value.split('\n').map((s) => s.trim()).filter(Boolean);
-    const radio = (name) => document.querySelector(`input[name=${name}]:checked`).value;
-    const setRadio = (name, v) => { const el = document.querySelector(`input[name=${name}][value="${v}"]`); if (el) el.checked = true; };
+    const radio = (name) => document.querySelector('input[name=' + name + ']:checked').value;
+    const setRadio = (name, v) => { const el = document.querySelector('input[name=' + name + '][value="' + v + '"]'); if (el) el.checked = true; };
 
     function targetType() { return radio('targetType') === 'group' ? 'group' : 'ou'; }
     function renderTargets() {
       const q = $('targetFilter').value.toLowerCase();
       const items = targetType() === 'group'
-        ? data.groups.map((g) => ({ id: g.id, label: `${g.name} <${g.email}>` }))
+        ? data.groups.map((g) => ({ id: g.id, label: g.name + ' <' + g.email + '>' }))
         : data.orgUnits.map((o) => ({ id: o.id, label: o.path === '/' ? '/ (whole organization)' : o.path }));
       const previous = $('target').value;
       $('target').replaceChildren(...items.filter((i) => i.label.toLowerCase().includes(q)).map((i) => {
@@ -225,7 +227,7 @@
         timezone: $('timezone').value.trim(),
         blockMessage: $('blockMessage').value.trim(),
         schedules: [...document.querySelectorAll('#schedules .schedule')].map((n) => {
-          const get = (k) => n.querySelector(`[data-k=${k}]`).value;
+          const get = (k) => n.querySelector('[data-k=' + k + ']').value;
           const list = (k) => get(k).split('\n').map((s) => s.trim()).filter(Boolean);
           return {
             name: get('name').trim(), start: get('start').trim(), end: get('end').trim(), mode: get('mode'),
@@ -264,9 +266,9 @@
       const t = target();
       const r = await call('loadTargetConfig', t);
       fillForm(r.config);
-      const installed = r.installType === 'FORCED' ? 'force-installed' : `install type: ${r.installType}`;
-      if (!r.config) return `${t.label} has no URL Filter settings yet (${installed}).`;
-      return r.setHere ? `Loaded settings saved on ${t.label} (${installed}).` : `Loaded settings ${t.label} inherits from a parent OU (${installed}). Saving creates its own copy.`;
+      const installed = r.installType === 'FORCED' ? 'force-installed' : 'install type: ' + r.installType;
+      if (!r.config) return t.label + ' has no URL Filter settings yet (' + installed + ').';
+      return r.setHere ? 'Loaded settings saved on ' + t.label + ' (' + installed + ').' : 'Loaded settings ' + t.label + ' inherits from a parent OU (' + installed + '). Saving creates its own copy.';
     }));
 
     $('import').addEventListener('click', () => run('Importing', async () => {
@@ -275,7 +277,7 @@
       if (r.block.some((s) => s.trim() === '*')) setRadio('mode', 'allowlist');
       $('allow').value = [...new Set([...lines('allow'), ...strip(r.allow)])].join('\n');
       $('block').value = [...new Set([...lines('block'), ...strip(r.block)])].join('\n');
-      return `Imported ${r.allow.length} allowed and ${r.block.length} blocked entries. Review, then Save.`;
+      return 'Imported ' + r.allow.length + ' allowed and ' + r.block.length + ' blocked entries. Review, then Save.';
     }));
 
     $('preview').addEventListener('click', () => {
@@ -287,14 +289,14 @@
       const t = target();
       const saved = await call('saveTargetConfig', t, readForm(), $('forceInstall').checked);
       fillForm(saved);
-      return `Saved to ${t.label}. Devices pick up changes within a few minutes (or right away after a policy refresh at chrome://policy).`;
+      return 'Saved to ' + t.label + '. Devices pick up changes within a few minutes (or right away after Reload policies on the chrome policy page).';
     }));
 
     $('clear').addEventListener('click', () => {
       let t;
       try { t = target(); } catch (e) { return status(e.message, 'err'); }
-      if (!confirm(`Remove URL Filter settings from ${t.label}? It will inherit from its parent OU again.`)) return;
-      run('Removing', async () => { await call('clearTargetConfig', t); return `Removed settings from ${t.label}.`; });
+      if (!confirm('Remove URL Filter settings from ' + t.label + '? It will inherit from its parent OU again.')) return;
+      run('Removing', async () => { await call('clearTargetConfig', t); return 'Removed settings from ' + t.label + '.'; });
     });
 
     run('Loading directory', async () => {
@@ -307,7 +309,7 @@
         throw new Error('Could not load your OUs and groups: ' + (e.message || e)
           + ' Check that the Admin SDK API is enabled in the linked Cloud project and that you are signed in as a Workspace admin.');
       }
-      $('who').textContent = `Signed in as ${data.user}`;
+      $('who').textContent = 'Signed in as ' + data.user;
       $('extId').value = data.extensionId;
       renderTargets();
       return data.extensionId ? 'Ready. Pick an OU or group and load its settings.' : 'Start by saving the extension ID.';
