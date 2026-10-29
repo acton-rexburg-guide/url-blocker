@@ -59,3 +59,4 @@ button.secondary { background: transparent; color: var(--accent); }
 .popup dd { margin: 0; }
 .popup textarea { width: 100%; box-sizing: border-box; min-height: 160px; font-family: ui-monospace, monospace; font-size: 12px; }
 .error { color: #d1242f; }
+.note { color: var(--muted); font-size: 13px; }

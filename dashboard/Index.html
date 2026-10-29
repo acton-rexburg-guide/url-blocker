@@ -28,9 +28,14 @@
     .buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
     .schedule { border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:10px; }
     .days { display:flex; gap:10px; flex-wrap:wrap; }
-    #status { position:sticky; bottom:0; padding:10px 16px; background:var(--card); border-top:1px solid var(--border); min-height:20px; }
+    #status { position:sticky; top:0; z-index:1; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--border); min-height:20px; font-weight:600; }
     #status.ok { color:var(--ok); } #status.err { color:var(--err); }
     pre { white-space:pre-wrap; word-break:break-all; font-size:12px; background:var(--bg); padding:10px; border-radius:6px; }
+    .checks { list-style:none; padding:0; margin:12px 0 0; }
+    .checks li { padding:4px 0; border-bottom:1px solid var(--border); }
+    .checks .ok::before { content:'\2714  '; color:var(--ok); }
+    .checks .bad::before { content:'\2716  '; color:var(--err); }
+    .checks .info::before { content:'\2022  '; color:var(--muted); }
     [hidden] { display:none !important; }
   </style>
 </head>
@@ -39,6 +44,7 @@
     <h1>URL Filter Admin</h1>
     <span class="hint" id="who">Loading…</span>
   </header>
+  <div id="status"></div>
   <main>
     <section id="setup">
       <h2>1. Setup</h2>
@@ -46,6 +52,18 @@
       <div class="row">
         <input type="text" id="extId" placeholder="abcdefghijklmnopabcdefghijklmnop">
         <div style="flex:0 0 auto"><button id="saveExt" type="button">Save</button></div>
+      </div>
+    </section>
+
+    <section id="check">
+      <h2>Check a user <span class="hint">follows the chain for one account: OU, groups, install, settings</span></h2>
+      <div class="row">
+        <input type="text" id="checkEmail" placeholder="student@actonrexburg.org">
+        <div style="flex:0 0 auto"><button id="checkUser" type="button" class="secondary">Check</button></div>
+      </div>
+      <div id="checkResult" hidden>
+        <ul id="checkList" class="checks"></ul>
+        <div class="buttons"><button id="copyCheck" type="button" class="secondary">Copy report</button></div>
       </div>
     </section>
 
@@ -126,7 +144,6 @@
       <pre id="json" hidden></pre>
     </section>
   </main>
-  <div id="status"></div>
 
   <template id="scheduleTpl">
     <div class="schedule">
@@ -149,31 +166,42 @@
   </template>
 
   <script>
+    // Apps Script rewrites this script before serving it and breaks template
+    // literals (a "//" inside one is taken as a comment), so use plain strings.
     const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
     const $ = (id) => document.getElementById(id);
     let data = { orgUnits: [], groups: [] };
 
     function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
+    // google.script.run can fail without calling either handler (most often when
+    // the browser is signed in to more than one Google account), so time out.
     function call(fn, ...args) {
-      return new Promise((resolve, reject) => google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(
+          'No answer from the server after 60 seconds. If this browser is signed in to more than one Google account, '
+          + 'open the dashboard in an incognito window or a Chrome profile signed in only to your Workspace admin account.')), 60000);
+        google.script.run
+          .withSuccessHandler((r) => { clearTimeout(timer); resolve(r); })
+          .withFailureHandler((e) => { clearTimeout(timer); reject(e); })[fn](...args);
+      });
     }
     async function run(label, fn) {
       status(label + '…');
       document.querySelectorAll('button').forEach((b) => (b.disabled = true));
-      try { const msg = await fn(); status(msg || 'Done.', 'ok'); }
+      try { const msg = await fn(); if (msg && msg.text) status(msg.text, msg.kind); else status(msg || 'Done.', 'ok'); }
       catch (e) { status(e.message || String(e), 'err'); }
       finally { document.querySelectorAll('button').forEach((b) => (b.disabled = false)); }
     }
 
     const lines = (id) => $(id).value.split('\n').map((s) => s.trim()).filter(Boolean);
-    const radio = (name) => document.querySelector(`input[name=${name}]:checked`).value;
-    const setRadio = (name, v) => { const el = document.querySelector(`input[name=${name}][value="${v}"]`); if (el) el.checked = true; };
+    const radio = (name) => document.querySelector('input[name=' + name + ']:checked').value;
+    const setRadio = (name, v) => { const el = document.querySelector('input[name=' + name + '][value="' + v + '"]'); if (el) el.checked = true; };
 
     function targetType() { return radio('targetType') === 'group' ? 'group' : 'ou'; }
     function renderTargets() {
       const q = $('targetFilter').value.toLowerCase();
       const items = targetType() === 'group'
-        ? data.groups.map((g) => ({ id: g.id, label: `${g.name} <${g.email}>` }))
+        ? data.groups.map((g) => ({ id: g.id, label: g.name + ' <' + g.email + '>' }))
         : data.orgUnits.map((o) => ({ id: o.id, label: o.path === '/' ? '/ (whole organization)' : o.path }));
       const previous = $('target').value;
       $('target').replaceChildren(...items.filter((i) => i.label.toLowerCase().includes(q)).map((i) => {
@@ -216,7 +244,7 @@
         timezone: $('timezone').value.trim(),
         blockMessage: $('blockMessage').value.trim(),
         schedules: [...document.querySelectorAll('#schedules .schedule')].map((n) => {
-          const get = (k) => n.querySelector(`[data-k=${k}]`).value;
+          const get = (k) => n.querySelector('[data-k=' + k + ']').value;
           const list = (k) => get(k).split('\n').map((s) => s.trim()).filter(Boolean);
           return {
             name: get('name').trim(), start: get('start').trim(), end: get('end').trim(), mode: get('mode'),
@@ -255,9 +283,9 @@
       const t = target();
       const r = await call('loadTargetConfig', t);
       fillForm(r.config);
-      const installed = r.installType === 'FORCED' ? 'force-installed' : `install type: ${r.installType}`;
-      if (!r.config) return `${t.label} has no URL Filter settings yet (${installed}).`;
-      return r.setHere ? `Loaded settings saved on ${t.label} (${installed}).` : `Loaded settings ${t.label} inherits from a parent OU (${installed}). Saving creates its own copy.`;
+      const installed = r.installType === 'FORCED' ? 'force-installed' : 'install type: ' + r.installType;
+      if (!r.config) return t.label + ' has no URL Filter settings yet (' + installed + ').';
+      return r.setHere ? 'Loaded settings saved on ' + t.label + ' (' + installed + ').' : 'Loaded settings ' + t.label + ' inherits from a parent OU (' + installed + '). Saving creates its own copy.';
     }));
 
     $('import').addEventListener('click', () => run('Importing', async () => {
@@ -266,7 +294,7 @@
       if (r.block.some((s) => s.trim() === '*')) setRadio('mode', 'allowlist');
       $('allow').value = [...new Set([...lines('allow'), ...strip(r.allow)])].join('\n');
       $('block').value = [...new Set([...lines('block'), ...strip(r.block)])].join('\n');
-      return `Imported ${r.allow.length} allowed and ${r.block.length} blocked entries. Review, then Save.`;
+      return 'Imported ' + r.allow.length + ' allowed and ' + r.block.length + ' blocked entries. Review, then Save.';
     }));
 
     $('preview').addEventListener('click', () => {
@@ -278,19 +306,46 @@
       const t = target();
       const saved = await call('saveTargetConfig', t, readForm(), $('forceInstall').checked);
       fillForm(saved);
-      return `Saved to ${t.label}. Devices pick up changes within a few minutes (or right away after a policy refresh at chrome://policy).`;
+      return 'Saved to ' + t.label + '. Devices pick up changes within a few minutes (or right away after Reload policies on the chrome policy page).';
     }));
+
+    let checkReport = '';
+    $('checkUser').addEventListener('click', () => run('Checking', async () => {
+      const r = await call('checkUser', $('checkEmail').value);
+      $('checkList').replaceChildren(...r.checks.map((c) => {
+        const li = document.createElement('li');
+        li.className = c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'info';
+        li.textContent = c.label + (c.detail ? ': ' + c.detail : '');
+        return li;
+      }));
+      $('checkResult').hidden = false;
+      checkReport = JSON.stringify({ dashboardCheck: r, checkedAt: new Date().toString() }, null, 2);
+      const bad = r.checks.filter((c) => c.ok === false).length;
+      return bad ? { text: bad + ' problem(s) found for ' + r.email + '. See the red items in Check a user.', kind: 'err' } : 'No problems found on the Workspace side for ' + r.email + '. Next, copy diagnostics from the extension on their device.';
+    }));
+    $('copyCheck').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(checkReport); status('Report copied.', 'ok'); }
+      catch (e) { $('json').hidden = false; $('json').textContent = checkReport; status('Could not copy. The report is shown under Save; select and copy it.', 'err'); }
+    });
 
     $('clear').addEventListener('click', () => {
       let t;
       try { t = target(); } catch (e) { return status(e.message, 'err'); }
-      if (!confirm(`Remove URL Filter settings from ${t.label}? It will inherit from its parent OU again.`)) return;
-      run('Removing', async () => { await call('clearTargetConfig', t); return `Removed settings from ${t.label}.`; });
+      if (!confirm('Remove URL Filter settings from ' + t.label + '? It will inherit from its parent OU again.')) return;
+      run('Removing', async () => { await call('clearTargetConfig', t); return 'Removed settings from ' + t.label + '.'; });
     });
 
     run('Loading directory', async () => {
-      data = await call('getBootstrap');
-      $('who').textContent = `Signed in as ${data.user}`;
+      try {
+        data = await call('getBootstrap');
+      } catch (e) {
+        $('who').textContent = 'Could not load';
+        // Still show the saved extension ID, which doesn't need the directory.
+        call('getExtensionId').then((id) => { $('extId').value = id; }, () => {});
+        throw new Error('Could not load your OUs and groups: ' + (e.message || e)
+          + ' Check that the Admin SDK API is enabled in the linked Cloud project and that you are signed in as a Workspace admin.');
+      }
+      $('who').textContent = 'Signed in as ' + data.user;
       $('extId').value = data.extensionId;
       renderTargets();
       return data.extensionId ? 'Ready. Pick an OU or group and load its settings.' : 'Start by saving the extension ID.';
