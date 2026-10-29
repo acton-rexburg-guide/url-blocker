@@ -31,6 +31,11 @@
     #status { position:sticky; top:0; z-index:1; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--border); min-height:20px; font-weight:600; }
     #status.ok { color:var(--ok); } #status.err { color:var(--err); }
     pre { white-space:pre-wrap; word-break:break-all; font-size:12px; background:var(--bg); padding:10px; border-radius:6px; }
+    .checks { list-style:none; padding:0; margin:12px 0 0; }
+    .checks li { padding:4px 0; border-bottom:1px solid var(--border); }
+    .checks .ok::before { content:'\2714  '; color:var(--ok); }
+    .checks .bad::before { content:'\2716  '; color:var(--err); }
+    .checks .info::before { content:'\2022  '; color:var(--muted); }
     [hidden] { display:none !important; }
   </style>
 </head>
@@ -47,6 +52,18 @@
       <div class="row">
         <input type="text" id="extId" placeholder="abcdefghijklmnopabcdefghijklmnop">
         <div style="flex:0 0 auto"><button id="saveExt" type="button">Save</button></div>
+      </div>
+    </section>
+
+    <section id="check">
+      <h2>Check a user <span class="hint">follows the chain for one account: OU, groups, install, settings</span></h2>
+      <div class="row">
+        <input type="text" id="checkEmail" placeholder="student@actonrexburg.org">
+        <div style="flex:0 0 auto"><button id="checkUser" type="button" class="secondary">Check</button></div>
+      </div>
+      <div id="checkResult" hidden>
+        <ul id="checkList" class="checks"></ul>
+        <div class="buttons"><button id="copyCheck" type="button" class="secondary">Copy report</button></div>
       </div>
     </section>
 
@@ -171,7 +188,7 @@
     async function run(label, fn) {
       status(label + '…');
       document.querySelectorAll('button').forEach((b) => (b.disabled = true));
-      try { const msg = await fn(); status(msg || 'Done.', 'ok'); }
+      try { const msg = await fn(); if (msg && msg.text) status(msg.text, msg.kind); else status(msg || 'Done.', 'ok'); }
       catch (e) { status(e.message || String(e), 'err'); }
       finally { document.querySelectorAll('button').forEach((b) => (b.disabled = false)); }
     }
@@ -291,6 +308,25 @@
       fillForm(saved);
       return 'Saved to ' + t.label + '. Devices pick up changes within a few minutes (or right away after Reload policies on the chrome policy page).';
     }));
+
+    let checkReport = '';
+    $('checkUser').addEventListener('click', () => run('Checking', async () => {
+      const r = await call('checkUser', $('checkEmail').value);
+      $('checkList').replaceChildren(...r.checks.map((c) => {
+        const li = document.createElement('li');
+        li.className = c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'info';
+        li.textContent = c.label + (c.detail ? ': ' + c.detail : '');
+        return li;
+      }));
+      $('checkResult').hidden = false;
+      checkReport = JSON.stringify({ dashboardCheck: r, checkedAt: new Date().toString() }, null, 2);
+      const bad = r.checks.filter((c) => c.ok === false).length;
+      return bad ? { text: bad + ' problem(s) found for ' + r.email + '. See the red items in Check a user.', kind: 'err' } : 'No problems found on the Workspace side for ' + r.email + '. Next, copy diagnostics from the extension on their device.';
+    }));
+    $('copyCheck').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(checkReport); status('Report copied.', 'ok'); }
+      catch (e) { $('json').hidden = false; $('json').textContent = checkReport; status('Could not copy. The report is shown under Save; select and copy it.', 'err'); }
+    });
 
     $('clear').addEventListener('click', () => {
       let t;

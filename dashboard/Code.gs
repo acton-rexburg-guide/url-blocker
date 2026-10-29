@@ -166,6 +166,94 @@ function importNativeLists(target) {
   return { allow, block };
 }
 
+// --- Check a user ------------------------------------------------------------
+
+// Walks the chain for one user: their OU and groups, whether the extension is
+// force-installed for them, and which settings reach them. Each check is
+// { ok: true | false | null (info), label, detail }.
+function checkUser(email) {
+  email = String(email || '').trim();
+  if (!email) throw new Error('Enter a user email.');
+  const checks = [];
+  const add = (ok, label, detail) => checks.push({ ok, label, detail: detail || '' });
+
+  const extId = getExtensionId();
+  add(!!extId, 'Extension ID saved in Setup', extId || 'Save it in section 1 first.');
+  if (!extId) return { email, checks };
+
+  let user;
+  try {
+    user = AdminDirectory.Users.get(email);
+  } catch (e) {
+    add(false, 'User found', e.message);
+    return { email, checks };
+  }
+  add(true, 'User found', user.primaryEmail + (user.suspended ? ' (suspended)' : ''));
+
+  const units = listOrgUnits();
+  const pathOf = (resource) => {
+    const id = String(resource || '').replace(/^orgunits\//, '');
+    const u = units.find((x) => x.id === id);
+    return u ? u.path : resource;
+  };
+  const ou = units.find((u) => u.path === user.orgUnitPath);
+  add(!!ou, 'Organizational unit', user.orgUnitPath);
+  if (!ou) return { email, checks };
+
+  const groups = [];
+  let pageToken;
+  do {
+    const page = AdminDirectory.Groups.list({ userKey: user.primaryEmail, pageToken });
+    (page.groups || []).forEach((g) => groups.push(g));
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  add(null, 'Groups', groups.length ? groups.map((g) => g.email).join(', ') : 'none');
+
+  const ouResult = describeTarget({ type: 'ou', id: ou.id }, pathOf);
+  add(ouResult.installType === 'FORCED', 'Extension force-installed (OU ' + ou.path + ')',
+    ouResult.installType === 'FORCED' ? 'yes' : 'Install type is ' + ouResult.installType + '. See README Step 1b.');
+  add(!!ouResult.config, 'Settings from OU', ouResult.config ? 'set on ' + ouResult.source : 'none found for ' + ou.path);
+
+  const groupResults = groups.map((g) => ({ g, r: describeTarget({ type: 'group', id: g.id }, pathOf) }));
+  groupResults.forEach(({ g, r }) => {
+    if (r.error) add(null, 'Group ' + g.email, 'could not read: ' + r.error);
+    else if (r.config || r.installType !== 'NOT_INSTALLED') {
+      add(null, 'Group ' + g.email, 'install type ' + r.installType + (r.config ? ', has settings (these override the OU)' : ', no settings'));
+    }
+  });
+
+  const winner = groupResults.find(({ r }) => r.config);
+  const effective = winner ? winner.r : ouResult;
+  if (winner && groupResults.filter(({ r }) => r.config).length > 1) {
+    add(null, 'Several groups have settings', 'The highest-ranked group in the Admin console wins; showing ' + winner.g.email + '.');
+  }
+  return {
+    email,
+    checks,
+    effectiveFrom: winner ? 'group ' + winner.g.email : effective.config ? 'OU ' + effective.source : null,
+    config: effective.config,
+    rawValue: effective.rawValue,
+  };
+}
+
+function describeTarget(target, pathOf) {
+  try {
+    const own = targetKey(target, false).targetResource;
+    const [cfg] = resolve(target, CONFIG_SCHEMA, true);
+    const [install] = resolve(target, INSTALL_SCHEMA, true);
+    const out = { installType: install ? install.value.value.appInstallType : 'NOT_INSTALLED', config: null };
+    if (cfg) {
+      out.rawValue = cfg.value.value.managedConfiguration;
+      out.config = typeof out.rawValue === 'string' ? JSON.parse(out.rawValue || '{}') : out.rawValue;
+      const src = cfg.sourceKey && cfg.sourceKey.targetResource;
+      out.source = src === own ? 'this ' + target.type : pathOf(src);
+    }
+    return out;
+  } catch (e) {
+    return { installType: 'UNKNOWN', config: null, error: e.message };
+  }
+}
+
 // --- Validation (mirrors extension/schema.json) ------------------------------
 
 function cleanList(list) {

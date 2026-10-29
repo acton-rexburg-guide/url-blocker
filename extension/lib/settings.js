@@ -4,7 +4,7 @@ export const isDev = !('update_url' in chrome.runtime.getManifest());
 
 // storage.managed.get() can hang while Chrome is still loading policy at
 // startup, and forever on a device with no policy. Returns null if it didn't answer.
-async function readManaged() {
+export async function readManaged() {
   try {
     const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
     return await Promise.race([chrome.storage.managed.get(null), timeout]);

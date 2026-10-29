@@ -171,6 +171,23 @@ How schedules combine:
 
 ---
 
+## When a change doesn't reach a device
+
+Collect two reports. Together they show where the chain breaks.
+
+1. **Workspace side:** in the dashboard, enter the user's email under **Check a user** and click **Check**. It shows their OU and groups, whether the extension is force-installed for them, and which settings reach them. **Copy report** copies all of it.
+2. **Device side:** on the user's Chromebook, click the extension's toolbar icon, then **Copy diagnostics**. It shows the extension version, the exact settings Chrome handed it, and the rules it's enforcing.
+
+Reading them:
+- Red items in the dashboard check → fix those first (often the user is in a different OU than the one you saved to, or the extension isn't force-installed there).
+- No extension on the device → check `chrome://extensions` and `chrome://policy` on that device (Step 1b).
+- `managedSettings` in the device report is empty or older than the dashboard → open `chrome://policy` on the device and click **Reload policies**, then copy diagnostics again.
+- `managedSettings` matches but sites aren't blocked → the rules list shows what's enforced; compare it with what you expected.
+
+`diagnose` in the Apps Script editor (pick it next to **Run**) checks the dashboard's own access to the Admin SDK and Chrome Policy API.
+
+---
+
 ## Essential services and blocking Google
 
 Your concern is the Admin console's built-in option to avoid blocking URLs that ChromeOS needs. Its list is maintained by Google. This filter handles the problem differently, so **there is no list for you to keep updated**:
