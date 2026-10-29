@@ -49,6 +49,11 @@ One-time setup:
 
 The extension ID for the key generated with this setup is **`chnnefiligaknogfjhfhbmiahinkldmf`**.
 
+> **✅ It worked if:**
+> - **Actions → Publish extension** shows a green check for the latest run.
+> - **Settings → Pages** says "Your site is live".
+> - The Pages URL shows a version number and the extension ID above. A different ID means the secret holds a different key.
+
 ### Step 1b: Force-install it from the Admin console
 
 1. Open **Devices → Chrome → Apps & extensions → Users & browsers** and select the OU to cover. Use the top-level OU to cover everyone, since sub-OUs inherit.
@@ -57,6 +62,10 @@ The extension ID for the key generated with this setup is **`chnnefiligaknogfjhf
 4. Set its installation policy to **Force install** (and **Pin to browser toolbar** if you want students to see its status icon).
 
 To limit it to certain groups instead, do the same on the **Groups** tab for each group.
+
+> **✅ It worked if,** on a Chromebook signed in as a user in that OU:
+> - `chrome://policy` → **Reload policies**, then `chrome://extensions` lists **Workspace URL Filter** with ID `chnnefiligaknogfjhfhbmiahinkldmf` and "Installed by your administrator".
+> - Clicking its toolbar icon opens a popup with a version number. "Settings from: Not configured" is expected until Step 4.
 
 > For a quick test without any of this, see [Testing locally](#testing-locally).
 
@@ -79,7 +88,11 @@ You need a Workspace **super admin**, or an admin with Chrome management and rea
 3. **Deploy:** click **Deploy → New deployment**, pick type **Web app**, set *Execute as* to **User accessing the web app** and *Who has access* to **Anyone within [your domain]**, then click **Deploy**.
 4. Open the **web app URL** and approve the permission prompt. Bookmark the URL: **this is your admin dashboard.**
 
-Because the dashboard runs as the person using it, a non-admin who opens it can't change anything. Google rejects their requests.
+Because the dashboard runs as the person using it, a non-admin who opens it can't change anything. Google rejects their requests. The Apps Script and Cloud projects can belong to any account in your domain; each admin opens the dashboard as themselves. Share the Apps Script project (**Share** button) with admins who should be able to run `diagnose` or update the code.
+
+> **✅ It worked if:**
+> - As an admin, in the Apps Script editor, pick `diagnose` next to **Run** and click **Run**. Every line in the Execution log starts with `OK`.
+> - The `/exec` URL shows your email at the top right, and the status bar under the title says "Start by saving the extension ID".
 
 **If the dashboard stays on "Loading…"** or Save does nothing, read the status bar under the title, then check:
 - **More than one Google account signed in.** Apps Script web apps often fail silently then. Open the dashboard in an incognito window, or a Chrome profile signed in only to your Workspace admin account.
@@ -98,11 +111,18 @@ Under **Devices → Chrome → Settings → Users & browsers**, for the OUs you 
 | Developer tools | Never allow use of built-in developer tools | Stops users from tampering with the extension |
 | Android apps / Linux | Off, unless you need them | Android browsers and Linux apps don't go through Chrome's extensions |
 
+> **✅ It worked if,** on a pilot Chromebook after **Reload policies** in `chrome://policy`: opening an incognito window (Ctrl+Shift+N) does nothing or shows it's disabled, and `chrome://policy` lists `IncognitoModeAvailability` and `DeveloperToolsAvailability` with the values you set.
+
 ### Step 4: Set up the first OU
 
 1. Open the dashboard, paste the **extension ID** in **Setup**, and click **Save**.
 2. Pick a **pilot OU** (or test group) where the extension is force-installed (Step 1b), write your rules, and click **Save**.
 3. On a pilot Chromebook, open `chrome://policy`, click **Reload policies**, and check that "Workspace URL Filter" appears in `chrome://extensions`. Click the extension's toolbar icon to see which mode and schedules are active.
+   **✅ It worked if:**
+   - Saving the ID says "Extension ID saved.", and after a page reload the ID is still in the box.
+   - Saving rules says "Saved to …".
+   - **Check a user** with a pilot user's email shows no red ✖.
+   - On the pilot Chromebook, the popup says "Settings from: Google Admin console" with the mode you chose, and a site you blocked shows the "blocked" page.
 4. Once it works, roll out to more OUs. If you're replacing your old Admin console URL blocking, clear those lists after migrating them (see below) so the two don't fight.
 
 ---
@@ -171,6 +191,36 @@ How schedules combine:
 
 ---
 
+## Making changes
+
+### Before you merge
+
+1. Run `npm test` (Node 20+). The **Tests** action also runs it on every push and pull request, so a red ✖ on a commit or PR means don't merge it.
+2. If you fixed a bug, add a test that fails without the fix. Tests live in `test/`:
+   - `policy.test.mjs`: the extension's blocking rules and schedules
+   - `crx.test.mjs`: signing and packaging
+   - `dashboard.test.mjs`: the dashboard's server code, run against a fake Workspace, plus checks that `Index.html` will run inside Apps Script
+
+### After you merge: what to do, and how you know it worked
+
+| What changed | What to do | ✅ It worked if |
+| --- | --- | --- |
+| `extension/` | Merge to `main`. The **Publish extension** action builds and publishes it. | The action is green, and the Pages URL shows the new version. On the pilot Chromebook, after **Update** in `chrome://extensions` (developer mode), the popup shows the same version. |
+| `dashboard/` | Paste the changed files into the Apps Script editor (or `clasp push`), then **Deploy → Manage deployments → Edit → Version: New version → Deploy**. | `diagnose` is all `OK`, and the `/exec` page loads your email and OUs. If the page looks frozen, press F12 and read the Console. |
+| Rules or schedules (from the dashboard) | **Save** to the OU or group. | **Check a user** shows no red ✖. On the device, after **Reload policies**, the popup's mode and "Last checked" time update. |
+
+### Pilot checklist
+
+Run these on a pilot Chromebook after any change. Each should take seconds:
+
+- [ ] The popup says "Settings from: Google Admin console" and shows the expected mode and schedules.
+- [ ] A site on your blocked list (or any site not allowed, in allowlist mode) shows the blocked page.
+- [ ] A site on your allowed list opens.
+- [ ] Google sign-in still works: sign out of a site that uses "Sign in with Google" and sign back in.
+- [ ] A link from an approved source opens (for example, a Classroom link to a site that's otherwise blocked).
+
+If any of these fail, collect the two reports below.
+
 ## When a change doesn't reach a device
 
 Collect two reports. Together they show where the chain breaks.
@@ -204,7 +254,7 @@ Blocking `google.com` here blocks the Google *websites* (Search, Drive, Docs, an
 
 1. In Chrome, go to `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the `extension/` folder.
 2. Click the extension's toolbar icon. Unpacked installs show a **Test config** box. Paste settings JSON (the same shape as the dashboard's **Show JSON**) and click **Apply**.
-3. Run the unit tests with `npm test` (Node 20+).
+3. Run the tests with `npm test` (Node 20+). See [Making changes](#making-changes) for what they cover.
 
 An unmanaged unpacked install filters nothing until you give it a test config. On managed devices, the Admin console settings always win.
 
