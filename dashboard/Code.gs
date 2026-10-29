@@ -14,6 +14,24 @@ function doGet() {
 
 // --- Setup -------------------------------------------------------------------
 
+// Run this from the Apps Script editor (pick "diagnose" next to Run) to check
+// each thing the dashboard needs. Results appear in the Execution log.
+function diagnose() {
+  const step = (name, fn) => {
+    try { console.log('OK    ' + name + ': ' + fn()); }
+    catch (e) { console.log('FAIL  ' + name + ': ' + e.message); }
+  };
+  step('Signed-in user', () => Session.getActiveUser().getEmail() || '(blank: not a Workspace account in this domain?)');
+  step('Saved extension ID', () => getExtensionId() || '(none saved)');
+  step('Admin SDK: org units', () => listOrgUnits().length + ' found');
+  step('Admin SDK: groups', () => listGroups().length + ' found');
+  step('Chrome Policy API', () => {
+    const root = listOrgUnits().find((u) => u.path === '/');
+    if (!root) return 'skipped (no org units listed)';
+    return resolve({ type: 'ou', id: root.id }, CONFIG_SCHEMA, !!getExtensionId()).length + ' policies read';
+  });
+}
+
 function getExtensionId() {
   return PropertiesService.getScriptProperties().getProperty('EXTENSION_ID') || '';
 }
