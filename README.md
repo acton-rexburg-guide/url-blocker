@@ -184,10 +184,10 @@ How schedules combine:
 
 - **Save** writes the settings to the selected OU or group. Devices pick up the change within minutes. `chrome://policy` → **Reload policies** applies it at once.
 - **Also set the extension to force-install here** is off by default. The Admin console setup in Step 1b already covers OUs that inherit it. Tick it only for a group, or an OU that overrides the install setting, and only after the extension has been added there by custom URL.
-- **Show JSON** shows exactly what gets stored.
+- **Show JSON** shows the settings as plain JSON (the format the extension's **Test config** box takes). The dashboard stores them with each setting wrapped as `{"mode": {"Value": "allowlist"}}`, the format the Admin console requires.
 - **Remove settings** deletes this OU's or group's own settings so it inherits again.
 
-**If saving to a group fails**, the extension usually hasn't been added to that group yet. Add it on the **Groups** tab as in Step 1b, then save again. As a fallback, you can paste the **Show JSON** output into the extension's **Policy for extensions** box in the Admin console.
+**If saving to a group fails**, the extension usually hasn't been added to that group yet. Add it on the **Groups** tab as in Step 1b, then save again. As a fallback, you can paste the **Show JSON** output into the extension's **Policy for extensions** box in the Admin console, after wrapping each setting as `{"mode": {"Value": "allowlist"}, "block": {"Value": ["games.com"]}, ...}`. Chrome ignores the whole policy if any setting isn't wrapped.
 
 ---
 

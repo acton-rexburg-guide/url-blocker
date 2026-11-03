@@ -99,6 +99,26 @@ function targetKey(target, withApp) {
   return key;
 }
 
+// The Admin console stores extension policy as {"key": {"Value": value}}.
+// Chrome drops the whole policy if any key isn't wrapped that way.
+function toPolicyJson(config) {
+  const out = {};
+  Object.keys(config).forEach((k) => { out[k] = { Value: config[k] }; });
+  return JSON.stringify(out);
+}
+
+// Reads the stored value back into plain settings. Accepts the old unwrapped
+// form too, so settings saved before the fix still load.
+function fromPolicyJson(raw) {
+  const value = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {};
+  const keys = Object.keys(value);
+  const wrapped = keys.length && keys.every((k) => value[k] && typeof value[k] === 'object' && !Array.isArray(value[k]) && 'Value' in value[k]);
+  if (!wrapped) return value;
+  const out = {};
+  keys.forEach((k) => { out[k] = value[k].Value; });
+  return out;
+}
+
 function resolve(target, schemaFilter, withApp) {
   return policyApi('policies:resolve', { policySchemaFilter: schemaFilter, policyTargetKey: targetKey(target, withApp) }).resolvedPolicies || [];
 }
@@ -112,8 +132,7 @@ function loadTargetConfig(target) {
   let config = null;
   let setHere = false;
   if (cfg) {
-    const value = cfg.value.value.managedConfiguration;
-    config = typeof value === 'string' ? JSON.parse(value || '{}') : value;
+    config = fromPolicyJson(cfg.value.value.managedConfiguration);
     setHere = cfg.sourceKey && cfg.sourceKey.targetResource === own;
   }
   return {
@@ -136,7 +155,7 @@ function saveTargetConfig(target, config, forceInstall) {
   }
   requests.push({
     policyTargetKey: key,
-    policyValue: { policySchema: CONFIG_SCHEMA, value: { managedConfiguration: JSON.stringify(clean) } },
+    policyValue: { policySchema: CONFIG_SCHEMA, value: { managedConfiguration: toPolicyJson(clean) } },
     updateMask: 'managedConfiguration',
   });
   policyApi(target.type === 'group' ? 'policies/groups:batchModify' : 'policies/orgunits:batchModify', { requests });
@@ -244,7 +263,7 @@ function describeTarget(target, pathOf) {
     const out = { installType: install ? install.value.value.appInstallType : 'NOT_INSTALLED', config: null };
     if (cfg) {
       out.rawValue = cfg.value.value.managedConfiguration;
-      out.config = typeof out.rawValue === 'string' ? JSON.parse(out.rawValue || '{}') : out.rawValue;
+      out.config = fromPolicyJson(out.rawValue);
       const src = cfg.sourceKey && cfg.sourceKey.targetResource;
       out.source = src === own ? 'this ' + target.type : pathOf(src);
     }

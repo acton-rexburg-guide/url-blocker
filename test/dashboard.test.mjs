@@ -137,7 +137,21 @@ test('saveTargetConfig writes the settings for this extension on the OU', () => 
   const [req] = requests[0].body.requests;
   assert.deepEqual(req.policyTargetKey, { targetResource: 'orgunits/students', additionalTargetKeys: { app_id: 'chrome:' + EXT_ID } });
   assert.equal(req.policyValue.policySchema, 'chrome.users.apps.ManagedConfiguration');
-  assert.equal(JSON.parse(req.policyValue.value.managedConfiguration).mode, 'allowlist');
+  // Chrome only accepts extension policy in the {"key": {"Value": ...}} form.
+  const stored = JSON.parse(req.policyValue.value.managedConfiguration);
+  assert.deepEqual(plain(stored.mode), { Value: 'allowlist' });
+  assert.deepEqual(plain(stored.allow), { Value: ['a.com'] });
+  Object.keys(stored).forEach((k) => assert.ok('Value' in stored[k], k + ' is not wrapped in {Value}'));
+});
+
+test('loadTargetConfig reads both wrapped and old unwrapped settings', () => {
+  for (const raw of [{ mode: { Value: 'allowlist' } }, { mode: 'allowlist' }]) {
+    const { gs } = fakeWorkspace({
+      props: { EXTENSION_ID: EXT_ID },
+      policies: { 'chrome.users.apps.ManagedConfiguration orgunits/students': { value: { value: { managedConfiguration: JSON.stringify(raw) } }, sourceKey: { targetResource: 'orgunits/students' } } },
+    });
+    assert.equal(gs.loadTargetConfig({ type: 'ou', id: 'students' }).config.mode, 'allowlist');
+  }
 });
 
 test('saveTargetConfig refuses before the extension ID is saved', () => {
