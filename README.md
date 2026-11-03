@@ -203,8 +203,8 @@ How Workspace decides which settings a user gets:
 - **Approved sources**: any link clicked or opened from these sites is allowed, even if its domain would be blocked. That covers the same tab, a new tab, and redirects.
   - *Keep the whole linked site open in that tab* (default): after a student clicks a Classroom link to `khanacademy.org`, they can keep browsing Khan Academy in that tab. Leaving that site, or opening it fresh in another tab, follows the normal rules.
   - *Allow only the linked page itself*: just the page that was opened. Moving to another page on that site is blocked, including on sites like YouTube that switch pages without a full reload (clicking another video).
-    - **5-second settling period.** Many sites change their own URL while a page loads (YouTube opens `watch?v=ID&feature=youtu.be`, then rewrites it). So for the first 5 seconds after the link opens, any change on the same site is accepted and becomes the allowed page. After that, only the page itself is allowed; small URL changes like adding `&t=30s` are still fine.
-    - Trade-off: clicking to another page on that site within those first 5 seconds also gets through.
+    - **8-second settling period.** Many sites change their own URL while a page loads (YouTube opens `watch?v=ID&feature=youtu.be`, then rewrites it). So for the first 8 seconds after the link opens, any change on the same site is accepted and becomes the allowed page. After that, only the page itself is allowed; small URL changes like adding `&t=30s` are still fine.
+    - Trade-off: clicking to another page on that site within those first 8 seconds also gets through.
     - To change the length, edit `LINK_SETTLE_MS` in `extension/lib/policy.js`.
   - Approved source sites are always allowed themselves.
 - **Never block Google sign-in and account pages**: leave this on. See below.

@@ -304,7 +304,7 @@ export function isSamePage(linked, url) {
 // on the same site is accepted and becomes the new "linked page". After that,
 // only isSamePage() changes are allowed. The trade-off: a click to another
 // page on that site within this window also gets through.
-export const LINK_SETTLE_MS = 5000;
+export const LINK_SETTLE_MS = 8000;
 
 // tab: { linked: url opened from the approved source, linkedAt: ms timestamp }
 export function isSettling(tab, url, now) {
