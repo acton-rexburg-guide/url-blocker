@@ -51,6 +51,7 @@ async function applyRules() {
 }
 
 async function init() {
+  await rememberOpenTabs();
   // Tick on minute boundaries so schedules switch on time.
   const nextMinute = Math.ceil(Date.now() / 60000) * 60000 + 1000;
   await chrome.alarms.create('tick', { when: nextMinute, periodInMinutes: 1 });
@@ -69,6 +70,29 @@ async function init() {
 
 async function getTabs() {
   return (await chrome.storage.session.get('tabs')).tabs ?? {};
+}
+
+// Session storage is wiped when the extension updates or Chrome restarts, but
+// tabs (like an approved source the person already had open) stay open. Record
+// the page each open tab is on so links clicked from them are still recognized.
+async function rememberOpenTabs() {
+  const tabs = await getTabs();
+  for (const t of await chrome.tabs.query({})) {
+    if (t.id === undefined || !/^https?:/.test(t.url ?? '')) continue;
+    tabs[t.id] ??= { rules: {} };
+    tabs[t.id].url ??= t.url;
+  }
+  await chrome.storage.session.set({ tabs });
+}
+
+// Our record of a tab's page, or Chrome's if we have none.
+async function pageOf(tabs, tabId) {
+  if (tabs[tabId]?.url) return tabs[tabId].url;
+  try {
+    return (await chrome.tabs.get(tabId)).url || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function nextSessionRuleId() {
@@ -126,7 +150,7 @@ async function onTopFrameHistoryUpdated(details) {
   const { config } = await getConfig();
   if (!config) return;
   const tabs = await getTabs();
-  const tab = tabs[details.tabId];
+  const tab = (tabs[details.tabId] ??= { rules: {} });
   const host = hostOf(details.url);
   const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
   const settling = isSettling(tab, details.url, Date.now());
@@ -136,12 +160,12 @@ async function onTopFrameHistoryUpdated(details) {
     Object.keys(tab?.rules ?? {}).some((site) => hostMatches(host, [{ host: site }])) ||
     (tab?.linked && isSamePage(tab.linked, details.url));
   if (allowed) {
-    if (tab) {
-      // While settling, the site's rewritten URL becomes the linked page.
-      if (settling) tab.linked = details.url;
-      tab.url = details.url;
-      await chrome.storage.session.set({ tabs });
-    }
+    // While settling, the site's rewritten URL becomes the linked page.
+    if (settling) tab.linked = details.url;
+    // Always record the page, so links clicked from single-page apps (like an
+    // approved source) are recognized.
+    tab.url = details.url;
+    await chrome.storage.session.set({ tabs });
     return;
   }
   await chrome.tabs.update(details.tabId, { url: `${chrome.runtime.getURL('blocked.html')}#${details.url}` });
@@ -229,12 +253,27 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.webNavigation.onCreatedNavigationTarget.addListener((details) =>
   serial(async () => {
     const tabs = await getTabs();
-    const opener = tabs[details.sourceTabId]?.url;
+    const opener = await pageOf(tabs, details.sourceTabId);
     if (!opener) return;
     tabs[details.tabId] = { ...(tabs[details.tabId] ?? { rules: {} }), opener };
     await chrome.storage.session.set({ tabs });
   }),
 );
+
+// Before a tab leaves a page we have no record of (for example one opened
+// before an update), ask Chrome which page it is so a link from an approved
+// source is still recognized.
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  if (details.frameId !== 0) return;
+  serial(async () => {
+    const tabs = await getTabs();
+    if (tabs[details.tabId]?.url) return;
+    const url = await pageOf(tabs, details.tabId);
+    if (!url || !/^https?:/.test(url) || url === details.url) return;
+    tabs[details.tabId] = { ...(tabs[details.tabId] ?? { rules: {} }), url };
+    await chrome.storage.session.set({ tabs });
+  });
+});
 
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId === 0 && /^https?:/.test(details.url)) serial(() => onTopFrameCommitted(details));
