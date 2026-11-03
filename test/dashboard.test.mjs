@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { normalizeConfig } from '../extension/lib/policy.js';
+import { normalizeConfig, verifyPassword } from '../extension/lib/policy.js';
 
 const read = (path) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const CODE = read('dashboard/Code.gs');
@@ -82,6 +82,25 @@ test('Index.html only calls server functions that exist in Code.gs', () => {
   const names = [...scriptOf(INDEX).matchAll(/call\('([^']+)'/g)].map((m) => m[1]);
   assert.ok(names.length > 5);
   for (const name of names) assert.equal(typeof gs[name], 'function', name + ' is not defined in Code.gs');
+});
+
+test('the dashboard hashes passwords the way the extension checks them', async () => {
+  const src = /async function hashPassword[\s\S]*?\n    }\n/.exec(scriptOf(INDEX));
+  assert.ok(src, 'hashPassword not found in Index.html');
+  const ctx = vm.createContext({ window: globalThis, crypto, TextEncoder, Uint8Array, btoa, String });
+  vm.runInContext(src[0], ctx);
+  const stored = await ctx.hashPassword('let me in please');
+  assert.ok(await verifyPassword('let me in please', stored));
+  assert.ok(!(await verifyPassword('let me in', stored)));
+  const { gs } = fakeWorkspace();
+  assert.equal(gs.cleanConfig({ overridePassword: stored }).overridePassword, stored);
+  assert.equal(normalizeConfig(JSON.parse(JSON.stringify(gs.cleanConfig({ overridePassword: stored })))).overridePassword, stored);
+});
+
+test('cleanConfig refuses a plain-text password', () => {
+  const { gs } = fakeWorkspace();
+  assert.throws(() => gs.cleanConfig({ overridePassword: 'hunter22' }), /password/);
+  assert.equal(gs.cleanConfig({}).overridePassword, '');
 });
 
 // --- Code.gs -----------------------------------------------------------------

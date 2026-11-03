@@ -60,3 +60,14 @@ button.secondary { background: transparent; color: var(--accent); }
 .popup textarea { width: 100%; box-sizing: border-box; min-height: 160px; font-family: ui-monospace, monospace; font-size: 12px; }
 .error { color: #d1242f; }
 .note { color: var(--muted); font-size: 13px; }
+.allow { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.allow h2 { font-size: 17px; margin: 0 0 12px; }
+.allow > label { display: block; margin: 12px 0 4px; font-weight: 600; }
+.allow input[type=password], .allow input[type=number] {
+  font: inherit; width: 100%; box-sizing: border-box; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+}
+.allow input[type=number] { max-width: 140px; }
+.allow fieldset { border: 0; padding: 0; margin: 12px 0 0; }
+.allow legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
+.allow .opt { display: block; margin: 4px 0; }

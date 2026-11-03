@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   parseEntry, parseList, normalizeConfig, isScheduleActive, effectivePolicy, nextChange,
   buildRules, pathRegex, localTime, PRIORITY, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
+  makeTempAllow, activeTempAllows, tempAllows, pageRegex, hashPassword, verifyPassword, parsePasswordHash,
 } from '../extension/lib/policy.js';
 
 const at = (day, hhmm) => {
@@ -132,4 +133,84 @@ test('isSettling: same-site URL changes are accepted only right after the link o
   assert.ok(!isSettling(tab, 'https://example.com/', 1500));
   assert.ok(!isSettling({ linked: tab.linked }, 'https://www.youtube.com/watch?v=B', 1500));
   assert.ok(!isSettling(undefined, 'https://www.youtube.com/', 1500));
+});
+
+// --- Temporary allows --------------------------------------------------------
+
+const NOW = 1_000_000;
+
+test('makeTempAllow: whole site or only the page, for a bounded time', () => {
+  const site = makeTempAllow('https://www.YouTube.com/shorts/x#c', 'site', 30, NOW);
+  assert.deepEqual(site, { scope: 'site', site: 'youtube.com', url: 'https://www.youtube.com/shorts/x', until: NOW + 30 * 60000 });
+  const page = makeTempAllow('https://www.youtube.com/watch?v=A', 'page', 5, NOW);
+  assert.deepEqual(page, { scope: 'page', url: 'https://www.youtube.com/watch?v=A', until: NOW + 5 * 60000 });
+  assert.equal(makeTempAllow('https://a.com/', 'site', 0, NOW), null);
+  assert.equal(makeTempAllow('https://a.com/', 'site', 1441, NOW), null);
+  assert.equal(makeTempAllow('https://a.com/', 'everyone', 5, NOW), null);
+  assert.equal(makeTempAllow('chrome://settings', 'site', 5, NOW), null);
+});
+
+test('activeTempAllows drops expired and malformed entries', () => {
+  const ok = makeTempAllow('https://a.com/', 'site', 1, NOW);
+  const old = { ...ok, until: NOW };
+  assert.deepEqual(activeTempAllows([ok, old, null, { scope: 'site', url: 'x', until: NOW + 1 }], NOW), [ok]);
+  assert.deepEqual(activeTempAllows(undefined, NOW), []);
+});
+
+test('a whole-site allow beats blocks and allowlist mode, for every page on the site', () => {
+  const config = normalizeConfig({ mode: 'allowlist', block: ['youtube.com/shorts'], blockEmbeds: true });
+  const policy = effectivePolicy(config, at(MON, '09:00'));
+  const temp = makeTempAllow('https://www.youtube.com/shorts/x', 'site', 10, NOW);
+  assert.ok(!allowsPage('https://m.youtube.com/watch?v=B', policy, config));
+  assert.ok(allowsPage('https://m.youtube.com/watch?v=B', policy, config, [temp]));
+  assert.ok(allowsPage('https://www.youtube.com/shorts/y', policy, config, [temp]));
+  assert.ok(!allowsPage('https://notyoutube.com/', policy, config, [temp]));
+
+  const rules = buildRules(policy, config, 'ext', [temp]);
+  const rule = rules.find((r) => r.condition.requestDomains?.[0] === 'youtube.com' && r.action.type === 'allow');
+  assert.ok(rule, 'no allow rule for the site');
+  assert.ok(rule.priority > PRIORITY.BLOCK && rule.priority > PRIORITY.CATCH_ALL);
+  assert.deepEqual(rule.condition.resourceTypes, ['main_frame', 'sub_frame']);
+});
+
+test('a page-only allow covers that page, not the rest of the site', () => {
+  const config = normalizeConfig({ block: ['youtube.com'] });
+  const policy = effectivePolicy(config, at(MON, '09:00'));
+  const temp = makeTempAllow('https://www.youtube.com/watch?v=A&si=x', 'page', 10, NOW);
+  assert.ok(allowsPage('https://www.youtube.com/watch?v=A', policy, config, [temp]));
+  assert.ok(allowsPage('https://www.youtube.com/watch?v=A&t=30', policy, config, [temp]));
+  assert.ok(!allowsPage('https://www.youtube.com/watch?v=B', policy, config, [temp]));
+  assert.ok(!allowsPage('https://www.youtube.com/', policy, config, [temp]));
+  assert.ok(!tempAllows(temp, 'https://m.youtube.com/watch?v=A'));
+
+  const rules = buildRules(policy, config, 'ext', [temp]);
+  const rule = rules.find((r) => r.condition.regexFilter === pageRegex(temp.url));
+  assert.ok(rule && rule.action.type === 'allow' && rule.priority > PRIORITY.BLOCK);
+  assert.deepEqual(rule.condition.resourceTypes, ['main_frame']);
+  const re = new RegExp(rule.condition.regexFilter);
+  assert.ok(re.test('https://www.youtube.com/watch?v=A'));
+  assert.ok(re.test('https://www.youtube.com/watch'));
+  assert.ok(!re.test('https://www.youtube.com/watch2?v=A'));
+  assert.ok(!re.test('https://www.youtube.com/'));
+  assert.ok(!re.test('https://www.youtube.com.evil.com/watch'));
+});
+
+// --- Password ----------------------------------------------------------------
+
+test('passwords are stored as a PBKDF2 hash and verified', async () => {
+  const stored = await hashPassword('correct horse', undefined, 1000);
+  assert.ok(parsePasswordHash(stored));
+  assert.ok(!stored.includes('correct horse'));
+  assert.ok(await verifyPassword('correct horse', stored));
+  assert.ok(!(await verifyPassword('Correct horse', stored)));
+  assert.ok(!(await verifyPassword('', stored)));
+  assert.ok(!(await verifyPassword('correct horse', 'correct horse')));
+  assert.notEqual(stored, await hashPassword('correct horse', undefined, 1000), 'salt should differ');
+});
+
+test('normalizeConfig keeps only a well-formed password hash', async () => {
+  const stored = await hashPassword('pw123456', undefined, 1000);
+  assert.equal(normalizeConfig({ overridePassword: stored }).overridePassword, stored);
+  assert.equal(normalizeConfig({ overridePassword: 'plaintext' }).overridePassword, '');
+  assert.equal(normalizeConfig({}).overridePassword, '');
 });

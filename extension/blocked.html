@@ -15,7 +15,26 @@
     <div class="buttons">
       <button id="back" type="button">Go back</button>
       <button id="retry" type="button" class="secondary">Try again</button>
+      <button id="tempAllow" type="button" class="secondary" hidden>Temporarily allow</button>
     </div>
+    <form id="allowForm" class="allow" hidden>
+      <h2>Temporarily allow</h2>
+      <label for="password">Admin password</label>
+      <input type="password" id="password" autocomplete="off" required>
+      <fieldset>
+        <legend>Allow</legend>
+        <label class="opt"><input type="radio" name="scope" value="site" checked> The whole site (<span id="siteName"></span>)</label>
+        <label class="opt"><input type="radio" name="scope" value="page"> Only this page</label>
+      </fieldset>
+      <label for="minutes">For how many minutes</label>
+      <input type="number" id="minutes" min="1" max="1440" step="1" value="30" required>
+      <p class="note">Applies only to the person signed in to this browser.</p>
+      <p id="allowError" class="error" role="alert" hidden></p>
+      <div class="buttons">
+        <button id="allowSubmit" type="submit">Allow</button>
+        <button id="allowCancel" type="button" class="secondary">Cancel</button>
+      </div>
+    </form>
   </main>
   <script type="module" src="blocked.js"></script>
 </body>

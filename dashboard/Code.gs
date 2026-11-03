@@ -5,6 +5,8 @@ const POLICY_API = 'https://chromepolicy.googleapis.com/v1/customers/my_customer
 const CONFIG_SCHEMA = 'chrome.users.apps.ManagedConfiguration';
 const INSTALL_SCHEMA = 'chrome.users.apps.InstallType';
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+// Same format as parsePasswordHash() in extension/lib/policy.js.
+const PASSWORD_HASH = /^pbkdf2-sha256\$\d{4,7}\$[A-Za-z0-9+\/]{16,}={0,2}\$[A-Za-z0-9+\/]{40,}={0,2}$/;
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
@@ -298,6 +300,7 @@ function cleanConfig(c) {
     blockEmbeds: c.blockEmbeds === true,
     timezone: String(c.timezone || '').trim(),
     blockMessage: String(c.blockMessage || '').slice(0, 500),
+    overridePassword: String(c.overridePassword || '').trim(),
     schedules: (c.schedules || []).map((s, i) => {
       const days = (s.days || []).filter((d) => DAYS.indexOf(d) !== -1);
       if (!days.length) throw new Error('Schedule ' + (i + 1) + ' needs at least one day.');
@@ -312,6 +315,8 @@ function cleanConfig(c) {
       };
     }),
   };
+  // Only the hash made in the dashboard page is accepted, never a plain password.
+  if (out.overridePassword && !PASSWORD_HASH.test(out.overridePassword)) throw new Error('The temporary-allow password wasn\'t saved correctly. Set it again.');
   if (out.timezone && !isValidTimezone(out.timezone)) throw new Error('Unknown time zone "' + out.timezone + '". Use a name like America/Denver.');
   return out;
 }

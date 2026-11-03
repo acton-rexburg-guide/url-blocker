@@ -8,6 +8,10 @@ async function render() {
   $('source').textContent = SOURCES[status?.source] ?? '…';
   $('mode').textContent = status?.mode ?? '—';
   $('schedules').textContent = status?.activeSchedules?.length ? status.activeSchedules.join(', ') : 'None';
+  const temps = (status?.tempAllows ?? []).filter((t) => t.until > Date.now());
+  $('temps').textContent = temps.length
+    ? temps.map((t) => `${t.scope === 'site' ? t.site : t.url} until ${new Date(t.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`).join(', ')
+    : 'None';
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const trusted = Object.keys(tabs[tab?.id]?.rules ?? {});
   $('trusted').textContent = trusted.length ? `Opened from an approved source: ${trusted.join(', ')}` : 'Normal rules';

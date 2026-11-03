@@ -6,7 +6,7 @@ export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'
 
 // Rule priorities: a higher number wins when several rules match a request.
 // Allow beats block, the same way Chrome's own URLAllowlist beats URLBlocklist.
-export const PRIORITY = { CATCH_ALL: 1, BLOCK: 2, ALLOW: 3, SOURCE: 4, ESSENTIAL: 5 };
+export const PRIORITY = { CATCH_ALL: 1, BLOCK: 2, ALLOW: 3, SOURCE: 4, TEMP: 4, ESSENTIAL: 5 };
 
 // Pages a person has to be able to open in a tab (or an embedded frame) to
 // sign in and keep their Google account working, even when "google.com" is
@@ -35,6 +35,7 @@ export const DEFAULTS = Object.freeze({
   blockEmbeds: false,
   timezone: '',
   blockMessage: '',
+  overridePassword: '',
 });
 
 const CATCH_ALL = '^(https?://.*)$';
@@ -123,6 +124,7 @@ export function normalizeConfig(raw = {}) {
     blockEmbeds: raw.blockEmbeds === true,
     timezone: isValidTimezone(raw.timezone) ? raw.timezone : '',
     blockMessage: typeof raw.blockMessage === 'string' ? raw.blockMessage.slice(0, 500) : '',
+    overridePassword: parsePasswordHash(raw.overridePassword) ? raw.overridePassword.trim() : '',
   };
 }
 
@@ -209,7 +211,7 @@ export function pathRegex(entry) {
 }
 
 // Builds the declarativeNetRequest dynamic rules for one effective policy.
-export function buildRules(policy, config, extensionId) {
+export function buildRules(policy, config, extensionId, temps = []) {
   const rules = [];
   const add = (priority, action, condition) => rules.push({ id: rules.length + 1, priority, action, condition });
   const frames = frameTypes(config);
@@ -250,6 +252,10 @@ export function buildRules(policy, config, extensionId) {
     add(PRIORITY.SOURCE, { type: 'allow' }, { initiatorDomains: sources, resourceTypes: frames });
     add(PRIORITY.SOURCE, { type: 'allow' }, { requestDomains: sources, resourceTypes: frames });
   }
+  for (const t of temps) {
+    if (t.scope === 'site') add(PRIORITY.TEMP, { type: 'allow' }, { requestDomains: [t.site], resourceTypes: frames });
+    else add(PRIORITY.TEMP, { type: 'allow' }, { regexFilter: pageRegex(t.url), resourceTypes: ['main_frame'] });
+  }
   if (config.protectEssentials) allow(PRIORITY.ESSENTIAL, parseList(ESSENTIAL_ENTRIES));
   return rules;
 }
@@ -262,7 +268,7 @@ export function tabTrustRule(id, tabId, site, config) {
 // Whether the rules from buildRules() let `url` load as a top-level page on
 // their own, without counting the page that opened it. Used for in-page
 // navigations (history.pushState), which never reach declarativeNetRequest.
-export function allowsPage(url, policy, config) {
+export function allowsPage(url, policy, config, temps = []) {
   let u;
   try {
     u = new URL(url);
@@ -270,6 +276,7 @@ export function allowsPage(url, policy, config) {
     return true;
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
+  if (temps.some((t) => tempAllows(t, url))) return true;
   const host = u.hostname.toLowerCase();
   const path = u.pathname.toLowerCase();
   const matches = (entries) => entries.some((e) => hostMatches(host, [e]) && path.startsWith(e.path));
@@ -315,4 +322,90 @@ export function isSettling(tab, url, now) {
   } catch {
     return false;
   }
+}
+
+// --- Temporary allows ("Temporarily allow" on the blocked page) -------------
+// Someone who knows the admin password can allow a blocked site for a while,
+// for the person using this browser only. Each allow is
+//   { scope: 'site', site: 'example.com', url, until }  the whole site, or
+//   { scope: 'page', url, until }                        only that page,
+// where "that page" means what isSamePage() means: same origin and path, and
+// no query parameter changed (youtube.com/watch?v=A, not ?v=B).
+
+export const MAX_TEMP_MINUTES = 1440;
+
+export function makeTempAllow(url, scope, minutes, now) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  minutes = Math.floor(Number(minutes));
+  if (!(minutes >= 1 && minutes <= MAX_TEMP_MINUTES)) return null;
+  const until = now + minutes * 60000;
+  u.hash = '';
+  if (scope === 'site') return { scope, site: siteOf(u.hostname.toLowerCase()), url: u.href, until };
+  if (scope === 'page') return { scope, url: u.href, until };
+  return null;
+}
+
+// Allows that haven't run out at `now`, ignoring anything malformed.
+export function activeTempAllows(list, now) {
+  return (Array.isArray(list) ? list : []).filter(
+    (t) => t && typeof t.until === 'number' && t.until > now && typeof t.url === 'string' &&
+      (t.scope === 'page' || (t.scope === 'site' && typeof t.site === 'string' && t.site)),
+  );
+}
+
+export function tempAllows(temp, url) {
+  if (temp.scope === 'page') return isSamePage(temp.url, url);
+  try {
+    return hostMatches(new URL(url).hostname.toLowerCase(), [{ host: temp.site }]);
+  } catch {
+    return false;
+  }
+}
+
+// The declarativeNetRequest filter for a page allow: same origin and path, any
+// query. Requests can't compare query parameters by name, so the service
+// worker checks those once the page commits (see isSamePage).
+export function pageRegex(url) {
+  const u = new URL(url);
+  return `^${escapeRegex(u.origin)}${escapeRegex(u.pathname)}([?#].*)?$`;
+}
+
+// --- Admin password --------------------------------------------------------
+// The dashboard stores only "pbkdf2-sha256$<iterations>$<salt>$<hash>"
+// (base64), never the password: managed settings are visible to anyone on the
+// device at chrome://policy.
+
+export const PASSWORD_ITERATIONS = 200000;
+
+export function parsePasswordHash(value) {
+  const m = /^pbkdf2-sha256\$(\d{4,7})\$([A-Za-z0-9+/]{16,}={0,2})\$([A-Za-z0-9+/]{40,}={0,2})$/.exec(typeof value === 'string' ? value.trim() : '');
+  return m ? { iterations: Number(m[1]), salt: m[2], hash: m[3] } : null;
+}
+
+const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function pbkdf2(password, salt, iterations) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256));
+}
+
+export async function hashPassword(password, salt = crypto.getRandomValues(new Uint8Array(16)), iterations = PASSWORD_ITERATIONS) {
+  return `pbkdf2-sha256$${iterations}$${toB64(salt)}$${toB64(await pbkdf2(password, salt, iterations))}`;
+}
+
+export async function verifyPassword(password, stored) {
+  const p = parsePasswordHash(stored);
+  if (!p || typeof password !== 'string' || !password) return false;
+  const got = await pbkdf2(password, fromB64(p.salt), p.iterations);
+  const want = fromB64(p.hash);
+  let diff = got.length ^ want.length;
+  for (let i = 0; i < Math.min(got.length, want.length); i++) diff |= got[i] ^ want[i];
+  return diff === 0;
 }

@@ -1,4 +1,7 @@
-import { normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS } from './lib/policy.js';
+import {
+  normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
+  activeTempAllows, tempAllows, makeTempAllow, verifyPassword,
+} from './lib/policy.js';
 import { readSettings } from './lib/settings.js';
 
 const dnr = chrome.declarativeNetRequest;
@@ -28,11 +31,13 @@ async function applyRules() {
     setTimeout(() => serial(applyRules), 10000);
     return;
   }
-  const status = { source, mode: null, activeSchedules: [], error: null, updatedAt: Date.now() };
+  const now = Date.now();
+  const { temps, expired } = await loadTempAllows(now);
+  const status = { source, mode: null, activeSchedules: [], tempAllows: temps, error: null, updatedAt: now };
   let rules = [];
   if (config) {
     const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
-    rules = buildRules(policy, config, chrome.runtime.id);
+    rules = buildRules(policy, config, chrome.runtime.id, temps);
     status.mode = policy.mode;
     status.activeSchedules = policy.activeSchedules;
   }
@@ -48,6 +53,8 @@ async function applyRules() {
     }
   }
   await chrome.storage.session.set({ status });
+  if (config && expired.length) await closeExpired(config, temps, expired);
+  scheduleExpiry(temps, now);
 }
 
 async function init() {
@@ -56,6 +63,85 @@ async function init() {
   const nextMinute = Math.ceil(Date.now() / 60000) * 60000 + 1000;
   await chrome.alarms.create('tick', { when: nextMinute, periodInMinutes: 1 });
   await applyRules();
+}
+
+// --- Temporary allows -------------------------------------------------------
+// Granted from the blocked page with the admin password, for this browser only.
+// Kept in storage.local so they survive a restart until they run out.
+
+async function loadTempAllows(now) {
+  const { tempAllows: stored = [] } = await chrome.storage.local.get('tempAllows');
+  const temps = activeTempAllows(stored, now);
+  const expired = stored.filter((t) => !temps.includes(t));
+  if (expired.length) await chrome.storage.local.set({ tempAllows: temps });
+  return { temps, expired };
+}
+
+// Wakes up when the next allow runs out. The minute alarm catches it too if
+// the service worker was stopped in between.
+let expiryTimer;
+function scheduleExpiry(temps, now) {
+  clearTimeout(expiryTimer);
+  if (!temps.length) return;
+  const next = Math.min(...temps.map((t) => t.until));
+  expiryTimer = setTimeout(() => serial(applyRules), Math.min(next - now + 500, 2 ** 31 - 1));
+}
+
+// Sends tabs still showing a page whose allow ran out to the blocked page.
+async function closeExpired(config, temps, expired) {
+  const now = Date.now();
+  const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
+  const tabs = await getTabs();
+  for (const t of await chrome.tabs.query({})) {
+    const url = t.url ?? '';
+    if (t.id === undefined || !/^https?:/.test(url)) continue;
+    if (!expired.some((e) => tempAllows(e, url))) continue;
+    if (tabAllows(tabs[t.id], url, policy, config, temps, now)) continue;
+    await chrome.tabs.update(t.id, { url: blockedPage(url) });
+  }
+}
+
+const MAX_TRIES = 5;
+const LOCKOUT_MS = 60000;
+
+async function grantTempAllow({ password, url, scope, minutes }) {
+  const { config } = await getConfig();
+  if (!config?.overridePassword) return { ok: false, error: 'Temporary allow is turned off. An admin can turn it on in the dashboard.' };
+  const now = Date.now();
+  const { pwFails = { count: 0, lockedUntil: 0 } } = await chrome.storage.local.get('pwFails');
+  if (pwFails.lockedUntil > now) {
+    return { ok: false, error: `Too many wrong passwords. Try again in ${Math.ceil((pwFails.lockedUntil - now) / 1000)} seconds.` };
+  }
+  const temp = makeTempAllow(url, scope, minutes, now);
+  if (!temp) return { ok: false, error: 'Enter a number of minutes from 1 to 1440.' };
+  if (!(await verifyPassword(password, config.overridePassword))) {
+    const count = pwFails.count + 1;
+    const locked = count >= MAX_TRIES;
+    await chrome.storage.local.set({ pwFails: { count: locked ? 0 : count, lockedUntil: locked ? now + LOCKOUT_MS : 0 } });
+    return { ok: false, error: locked ? 'Too many wrong passwords. Try again in a minute.' : 'Wrong password.' };
+  }
+  await chrome.storage.local.remove('pwFails');
+  const { temps } = await loadTempAllows(now);
+  const same = (t) => t.scope === temp.scope && (t.scope === 'site' ? t.site === temp.site : t.url === temp.url);
+  await chrome.storage.local.set({ tempAllows: [...temps.filter((t) => !same(t)), temp] });
+  await applyRules();
+  return { ok: true, until: temp.until };
+}
+
+function blockedPage(url) {
+  return `${chrome.runtime.getURL('blocked.html')}#${url}`;
+}
+
+// Whether `url` may stay open in this tab without a new request reaching
+// declarativeNetRequest: the policy, a temporary allow, or approved-source trust.
+function tabAllows(tab, url, policy, config, temps, now) {
+  const host = hostOf(url);
+  return (
+    isSettling(tab, url, now) ||
+    allowsPage(url, policy, config, temps) ||
+    Object.keys(tab?.rules ?? {}).some((site) => hostMatches(host, [{ host: site }])) ||
+    !!(tab?.linked && isSamePage(tab.linked, url))
+  );
 }
 
 // --- Links opened from approved sources ------------------------------------
@@ -114,12 +200,15 @@ async function onTopFrameCommitted(details) {
   const tabs = await getTabs();
   const tab = tabs[details.tabId] ?? { rules: {} };
   const from = tab.opener ?? tab.url;
-  tab.url = details.url;
-  delete tab.opener;
-
   const now = Date.now();
   const followedLink = details.transitionType === 'link' || details.transitionType === 'form_submit';
   const fromSource = followedLink && from && config && hostMatches(hostOf(from), config.approvedSources);
+  if (config && !fromSource && (await outsideTempPage(tab, details.url, config, now))) {
+    await chrome.tabs.update(details.tabId, { url: blockedPage(details.url) });
+    return;
+  }
+  tab.url = details.url;
+  delete tab.opener;
   if (fromSource) {
     // The page reached from an approved source; in-page navigations may stay on it.
     tab.linked = details.url;
@@ -144,6 +233,21 @@ async function onTopFrameCommitted(details) {
   await chrome.storage.session.set({ tabs });
 }
 
+// A "this page only" allow lets every URL with the same origin and path load
+// (requests can't compare query parameters), so a different video on the same
+// watch page gets here. Block it unless something else allows it.
+async function outsideTempPage(tab, url, config, now) {
+  const { temps } = await loadTempAllows(now);
+  const u = new URL(url);
+  const samePath = (t) => {
+    const p = new URL(t.url);
+    return p.origin === u.origin && p.pathname === u.pathname;
+  };
+  if (!temps.some((t) => t.scope === 'page' && samePath(t))) return false;
+  const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
+  return !tabAllows(tab, url, policy, config, temps, now);
+}
+
 // Single-page sites like YouTube change pages with history.pushState, which
 // declarativeNetRequest never sees. Check those URL changes here instead.
 async function onTopFrameHistoryUpdated(details) {
@@ -151,15 +255,11 @@ async function onTopFrameHistoryUpdated(details) {
   if (!config) return;
   const tabs = await getTabs();
   const tab = (tabs[details.tabId] ??= { rules: {} });
-  const host = hostOf(details.url);
+  const now = Date.now();
+  const { temps } = await loadTempAllows(now);
   const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
-  const settling = isSettling(tab, details.url, Date.now());
-  const allowed =
-    settling ||
-    allowsPage(details.url, policy, config) ||
-    Object.keys(tab?.rules ?? {}).some((site) => hostMatches(host, [{ host: site }])) ||
-    (tab?.linked && isSamePage(tab.linked, details.url));
-  if (allowed) {
+  const settling = isSettling(tab, details.url, now);
+  if (tabAllows(tab, details.url, policy, config, temps, now)) {
     // While settling, the site's rewritten URL becomes the linked page.
     if (settling) tab.linked = details.url;
     // Always record the page, so links clicked from single-page apps (like an
@@ -168,7 +268,7 @@ async function onTopFrameHistoryUpdated(details) {
     await chrome.storage.session.set({ tabs });
     return;
   }
-  await chrome.tabs.update(details.tabId, { url: `${chrome.runtime.getURL('blocked.html')}#${details.url}` });
+  await chrome.tabs.update(details.tabId, { url: blockedPage(details.url) });
 }
 
 // Lets the linked site load fully in this tab (including reloads it does on
@@ -284,3 +384,16 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => serial(() => forgetTab(tabId)));
+
+// From the blocked page's "Temporarily allow" form.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'tempAllow' || sender.id !== chrome.runtime.id) return false;
+  serial(async () => {
+    try {
+      sendResponse(await grantTempAllow(msg));
+    } catch (e) {
+      sendResponse({ ok: false, error: String(e?.message ?? e) });
+    }
+  });
+  return true;
+});

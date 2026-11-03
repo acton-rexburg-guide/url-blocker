@@ -46,6 +46,11 @@
       "title": "Message shown on the blocked page",
       "type": "string"
     },
+    "overridePassword": {
+      "title": "Temporary-allow password (hashed)",
+      "description": "Set from the dashboard. A PBKDF2 hash of the password that lets someone temporarily allow a blocked site from the blocked page. Empty turns the button off.",
+      "type": "string"
+    },
     "schedules": {
       "title": "Schedules",
       "type": "array",
