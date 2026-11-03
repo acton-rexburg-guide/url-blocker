@@ -202,7 +202,7 @@ How Workspace decides which settings a user gets:
   - **Allowed beats blocked.** In blocklist mode, the allowed list holds exceptions. For example, block `youtube.com` and allow `youtube.com/edu`.
 - **Approved sources**: any link clicked or opened from these sites is allowed, even if its domain would be blocked. That covers the same tab, a new tab, and redirects.
   - *Keep the whole linked site open in that tab* (default): after a student clicks a Classroom link to `khanacademy.org`, they can keep browsing Khan Academy in that tab. Leaving that site, or opening it fresh in another tab, follows the normal rules.
-  - *Allow only the linked page itself*: just the page that was opened.
+  - *Allow only the linked page itself*: just the page that was opened. Moving to another page on that site is blocked, including on sites like YouTube that switch pages without a full reload (clicking another video).
   - Approved source sites are always allowed themselves.
 - **Never block Google sign-in and account pages**: leave this on. See below.
 - **Also filter embedded frames**: off by default. Turn it on to also block blocked sites shown *inside* other pages, like an embedded YouTube player. It's stricter, but it can break widgets on allowed sites.

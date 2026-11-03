@@ -1,4 +1,4 @@
-import { normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule } from './lib/policy.js';
+import { normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule, allowsPage, isSamePage } from './lib/policy.js';
 import { readSettings } from './lib/settings.js';
 
 const dnr = chrome.declarativeNetRequest;
@@ -89,7 +89,11 @@ async function onTopFrameCommitted(details) {
   delete tab.opener;
 
   const followedLink = details.transitionType === 'link' || details.transitionType === 'form_submit';
-  if (config?.approvedSourceScope === 'site' && followedLink && from && hostMatches(hostOf(from), config.approvedSources)) {
+  const fromSource = followedLink && from && config && hostMatches(hostOf(from), config.approvedSources);
+  // The page reached from an approved source; in-page navigations may stay on it.
+  if (fromSource) tab.linked = details.url;
+  else delete tab.linked;
+  if (config?.approvedSourceScope === 'site' && fromSource) {
     const site = siteOf(hostOf(details.url));
     if (site && !tab.rules[site] && !hostMatches(site, config.approvedSources)) {
       const id = await nextSessionRuleId();
@@ -99,6 +103,29 @@ async function onTopFrameCommitted(details) {
   }
   tabs[details.tabId] = tab;
   await chrome.storage.session.set({ tabs });
+}
+
+// Single-page sites like YouTube change pages with history.pushState, which
+// declarativeNetRequest never sees. Check those URL changes here instead.
+async function onTopFrameHistoryUpdated(details) {
+  const { config } = await getConfig();
+  if (!config) return;
+  const tabs = await getTabs();
+  const tab = tabs[details.tabId];
+  const host = hostOf(details.url);
+  const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
+  const allowed =
+    allowsPage(details.url, policy, config) ||
+    Object.keys(tab?.rules ?? {}).some((site) => hostMatches(host, [{ host: site }])) ||
+    (tab?.linked && isSamePage(tab.linked, details.url));
+  if (allowed) {
+    if (tab) {
+      tab.url = details.url;
+      await chrome.storage.session.set({ tabs });
+    }
+    return;
+  }
+  await chrome.tabs.update(details.tabId, { url: `${chrome.runtime.getURL('blocked.html')}#${details.url}` });
 }
 
 async function forgetTab(tabId) {
@@ -150,6 +177,10 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) =>
 
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId === 0 && /^https?:/.test(details.url)) serial(() => onTopFrameCommitted(details));
+});
+
+chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+  if (details.frameId === 0 && /^https?:/.test(details.url)) serial(() => onTopFrameHistoryUpdated(details));
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => serial(() => forgetTab(tabId)));

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseEntry, parseList, normalizeConfig, isScheduleActive, effectivePolicy, nextChange,
-  buildRules, pathRegex, localTime, PRIORITY,
+  buildRules, pathRegex, localTime, PRIORITY, allowsPage, isSamePage,
 } from '../extension/lib/policy.js';
 
 const at = (day, hhmm) => {
@@ -96,4 +96,29 @@ test('pathRegex matches the domain, subdomains, and the path prefix only', () =>
 test('localTime honors a configured time zone', () => {
   const t = localTime(new Date('2026-10-26T15:30:00Z'), 'America/Denver'); // a Monday
   assert.deepEqual(t, at(MON, '09:30'));
+});
+
+test('allowsPage mirrors the static rules for in-page navigations', () => {
+  const config = normalizeConfig({ mode: 'allowlist', allow: ['wikipedia.org', 'youtube.com/edu'], approvedSources: ['classroom.google.com'] });
+  const policy = effectivePolicy(config, at(MON, '09:00'));
+  assert.ok(allowsPage('https://en.wikipedia.org/wiki/X', policy, config));
+  assert.ok(allowsPage('https://youtube.com/edu/x', policy, config));
+  assert.ok(allowsPage('https://classroom.google.com/c/1', policy, config));
+  assert.ok(allowsPage('https://accounts.google.com/signin', policy, config));
+  assert.ok(!allowsPage('https://www.youtube.com/watch?v=B', policy, config));
+  const block = normalizeConfig({ block: ['youtube.com'], allow: ['youtube.com/edu'] });
+  const bp = effectivePolicy(block, at(MON, '09:00'));
+  assert.ok(!allowsPage('https://www.youtube.com/watch?v=B', bp, block));
+  assert.ok(allowsPage('https://www.youtube.com/edu', bp, block));
+  assert.ok(allowsPage('https://example.com/', bp, block));
+});
+
+test('isSamePage: another video is a different page', () => {
+  const linked = 'https://www.youtube.com/watch?v=A&si=xyz';
+  assert.ok(isSamePage(linked, 'https://www.youtube.com/watch?v=A'));
+  assert.ok(isSamePage(linked, 'https://www.youtube.com/watch?v=A&t=30s'));
+  assert.ok(isSamePage(linked, 'https://www.youtube.com/watch?v=A#comments'));
+  assert.ok(!isSamePage(linked, 'https://www.youtube.com/watch?v=B'));
+  assert.ok(!isSamePage(linked, 'https://www.youtube.com/shorts/A'));
+  assert.ok(!isSamePage(linked, 'https://www.youtube.com/'));
 });

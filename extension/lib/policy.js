@@ -258,3 +258,41 @@ export function buildRules(policy, config, extensionId) {
 export function tabTrustRule(id, tabId, site, config) {
   return { id, priority: PRIORITY.SOURCE, action: { type: 'allow' }, condition: { tabIds: [tabId], requestDomains: [site], resourceTypes: frameTypes(config) } };
 }
+
+// Whether the rules from buildRules() let `url` load as a top-level page on
+// their own, without counting the page that opened it. Used for in-page
+// navigations (history.pushState), which never reach declarativeNetRequest.
+export function allowsPage(url, policy, config) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return true;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
+  const host = u.hostname.toLowerCase();
+  const path = u.pathname.toLowerCase();
+  const matches = (entries) => entries.some((e) => hostMatches(host, [e]) && path.startsWith(e.path));
+  if (config.protectEssentials && matches(parseList(ESSENTIAL_ENTRIES))) return true;
+  if (hostMatches(host, config.approvedSources)) return true;
+  if (matches(policy.allow)) return true;
+  if (matches(policy.block)) return false;
+  return policy.mode !== 'allowlist';
+}
+
+// Whether `url` is still the page `linked` points to: same origin and path,
+// and no query parameter changed value (youtube.com/watch?v=A -> ?v=B is a
+// different page; adding &t=30 or dropping a tracking parameter is not).
+export function isSamePage(linked, url) {
+  try {
+    const a = new URL(linked);
+    const b = new URL(url);
+    if (a.origin !== b.origin || a.pathname !== b.pathname) return false;
+    for (const key of new Set(a.searchParams.keys())) {
+      if (b.searchParams.has(key) && b.searchParams.getAll(key).join('\n') !== a.searchParams.getAll(key).join('\n')) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
