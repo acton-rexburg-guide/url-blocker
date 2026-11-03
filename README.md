@@ -63,6 +63,8 @@ The extension ID for the key generated with this setup is **`chnnefiligaknogfjhf
 
 To limit it to certain groups instead, do the same on the **Groups** tab for each group.
 
+> **Why the Admin console shows only an ID, with no name or icon:** the Admin console gets an extension's name and icon from the Chrome Web Store. A self-hosted extension isn't in the Web Store, so its row shows the ID `chnnefiligaknogfjhfhbmiahinkldmf` and a blank icon. That's cosmetic; it installs and works the same. The name and icon do show in `chrome://extensions` and the toolbar on devices. To get them in the Admin console too, the extension would have to be published to the Web Store as a **Private** item visible only to your domain, which means a Web Store developer account and Google review for each update.
+
 > **✅ It worked if,** on a Chromebook signed in as a user in that OU:
 > - `chrome://policy` → **Reload policies**, then `chrome://extensions` lists **Workspace URL Filter** with ID `chnnefiligaknogfjhfhbmiahinkldmf` and "Installed by your administrator".
 > - Clicking its toolbar icon opens a popup with a version number. "Settings from: Not configured" is expected until Step 4.
@@ -75,8 +77,17 @@ You need a Workspace **super admin**, or an admin with Chrome management and rea
 
 1. **Create a Google Cloud project** (or use an existing one) at <https://console.cloud.google.com>.
    - Under **APIs & Services → Library**, enable **Chrome Policy API** and **Admin SDK API**.
-   - Under **APIs & Services → OAuth consent screen**, choose **Internal** and fill in the app name and support email.
    - Note the **project number** shown on the project's Dashboard page.
+   - Set up the **OAuth consent screen** (next step). Apps Script refuses to link a Cloud project that doesn't have one.
+
+   **Set up the OAuth consent screen.** This is the "URL Filter Admin wants to access your Google Account" prompt admins see the first time they open the dashboard.
+   1. In the same Cloud project, open **APIs & Services → OAuth consent screen**. Newer consoles call it **Google Auth Platform**; if you see **Get started**, click it.
+   2. **App information:** App name `URL Filter Admin`, and a **User support email** (your address or an admin group). Click **Next**.
+   3. **Audience:** choose **Internal**. Only accounts in your Workspace domain can use it, and Google doesn't need to verify the app. (If Internal is greyed out, the project isn't in your Workspace organization: create it while signed in as a Workspace account, or move it under your organization.)
+   4. **Contact information:** an email for Google to send notices about the project. Click **Next**, agree to the user data policy, then **Continue → Create**.
+   5. You don't need to add scopes or create an OAuth client by hand. Apps Script adds the scopes listed in `dashboard/appsscript.json` when you link the project.
+
+   > **✅ It worked if** **OAuth consent screen** (or **Google Auth Platform → Audience**) shows *User type: Internal*.
 2. **Create the Apps Script project** at <https://script.google.com>, then click **New project** and name it "URL Filter Admin".
    - Click **Project Settings** (gear icon) and check **Show "appsscript.json" manifest file in editor**.
    - Under **Google Cloud Platform (GCP) Project**, click **Change project** and enter the project number from step 1.
@@ -84,7 +95,7 @@ You need a Workspace **super admin**, or an admin with Chrome management and rea
    - Add an HTML file named `Index` (**+ → HTML**) and paste in `dashboard/Index.html`.
    - Edit `"timeZone"` in `appsscript.json` if you like. It only affects Apps Script logs.
 
-   *Command-line alternative:* `npm i -g @google/clasp`, then `clasp login`, then run `clasp create --type webapp --title "URL Filter Admin" --rootDir dashboard` and `clasp push`. You still need to link the GCP project as described above.
+   *Command-line alternative:* `npm i -g @google/clasp@2.4.2`, then `clasp login`, then run `clasp create --type webapp --title "URL Filter Admin" --rootDir dashboard` and `clasp push`. You still need to link the GCP project as described above. To have GitHub do this on every change, see [Automatic dashboard deploys](#automatic-dashboard-deploys-optional) after Step 3 below.
 3. **Deploy:** click **Deploy → New deployment**, pick type **Web app**, set *Execute as* to **User accessing the web app** and *Who has access* to **Anyone within [your domain]**, then click **Deploy**.
 4. Open the **web app URL** and approve the permission prompt. Bookmark the URL: **this is your admin dashboard.**
 
@@ -92,9 +103,41 @@ Because the dashboard runs as the person using it, a non-admin who opens it can'
 
 > **✅ It worked if:**
 > - As an admin, in the Apps Script editor, pick `diagnose` next to **Run** and click **Run**. Every line in the Execution log starts with `OK`.
-> - The `/exec` URL shows your email at the top right, and the status bar under the title says "Start by saving the extension ID".
+> - The `/exec` URL shows your email at the top right and opens on **Setup** with "Start by saving the extension ID".
 
-**If the dashboard stays on "Loading…"** or Save does nothing, read the status bar under the title, then check:
+#### Automatic dashboard deploys (optional)
+
+Once Step 2 works by hand, the **Deploy dashboard** GitHub Action (`.github/workflows/deploy-dashboard.yml`) can do the paste-and-redeploy for you. On every push to `main` that changes `dashboard/`, it runs the tests, then `clasp push` and `clasp deploy` to the web app deployment you already have, so the `/exec` URL stays the same. Until the secrets below exist it skips with a notice.
+
+One-time setup, on your own computer:
+
+1. Turn on the Apps Script API for the account that will deploy: <https://script.google.com/home/usersettings> → **Google Apps Script API** → On. Use an account that can edit the Apps Script project.
+2. Install clasp and log in:
+   ```bash
+   npm i -g @google/clasp@2.4.2
+   ```
+   ```bash
+   clasp login
+   ```
+   This writes `~/.clasprc.json` (on Windows, `%USERPROFILE%\.clasprc.json`). It holds a login token for your account, so treat it like a password.
+3. In the repo, open **Settings → Secrets and variables → Actions** and add three repository secrets:
+
+   | Secret | Value | Where to find it |
+   | --- | --- | --- |
+   | `CLASPRC_JSON` | The whole contents of `~/.clasprc.json` | From step 2 |
+   | `SCRIPT_ID` | The Apps Script project's ID | Apps Script editor → **Project Settings → IDs → Script ID** |
+   | `DEPLOYMENT_ID` | The web app deployment's ID (starts with `AKfy`) | **Deploy → Manage deployments**, select the web app, copy **Deployment ID** |
+
+4. Go to **Actions → Deploy dashboard → Run workflow**.
+
+> **✅ It worked if:**
+> - The run is green, and the **Push and deploy with clasp** step lists the pushed files and your deployment ID.
+> - In the Apps Script editor, **Deploy → Manage deployments** shows a new version with the description `GitHub <commit>`.
+> - The `/exec` URL still loads and shows any change you made.
+
+If a later run fails with `invalid_grant` or `unauthorized`, the token expired or was revoked (a password change, or a Workspace session-length policy can do this). Run `clasp login` again and replace `CLASPRC_JSON`.
+
+**If the dashboard stays on "Loading…"** or Save does nothing, read the message at the bottom of the page, then check:
 - **More than one Google account signed in.** Apps Script web apps often fail silently then. Open the dashboard in an incognito window, or a Chrome profile signed in only to your Workspace admin account.
 - **Admin SDK API and Chrome Policy API** are enabled in the linked Cloud project (Step 2.1), and the Apps Script project is linked to it.
 - **After pasting new code, redeploy.** The web app URL serves the deployed version, not the editor's. Use **Deploy → Manage deployments → Edit → Version: New version → Deploy**.
@@ -115,8 +158,8 @@ Under **Devices → Chrome → Settings → Users & browsers**, for the OUs you 
 
 ### Step 4: Set up the first OU
 
-1. Open the dashboard, paste the **extension ID** in **Setup**, and click **Save**.
-2. Pick a **pilot OU** (or test group) where the extension is force-installed (Step 1b), write your rules, and click **Save**.
+1. Open the dashboard. It opens on **Setup** the first time: paste the **extension ID** and click **Save**.
+2. Click **Settings**, pick a **pilot OU** (or test group) on the left where the extension is force-installed (Step 1b), write your rules, and click **Save** in the bar at the bottom.
 3. On a pilot Chromebook, open `chrome://policy`, click **Reload policies**, and check that "Workspace URL Filter" appears in `chrome://extensions`. Click the extension's toolbar icon to see which mode and schedules are active.
    **✅ It worked if:**
    - Saving the ID says "Extension ID saved.", and after a page reload the ID is still in the box.
@@ -129,21 +172,27 @@ Under **Devices → Chrome → Settings → Users & browsers**, for the OUs you 
 
 ## Using the dashboard
 
-### 1. Setup
+It's laid out like the Admin console:
 
-You save the extension ID once. It's stored in the script's properties.
+- **Top bar:** **Settings** (the default), **Check a user** (see [When a change doesn't reach a device](#when-a-change-doesnt-reach-a-device)), and **Setup**, where you save the extension ID once. It's stored in the script's properties.
+- **Left panel:** your **Organizational units** as a tree, and a **Groups** tab. Type in the search box to filter.
+- **Right:** the settings for whatever you click on the left. They load as soon as you click; there's no load button.
 
-### 2. Who these settings apply to
+### 1. Who these settings apply to
 
-- Choose **Organizational unit** or **Group** and pick one from the list. Type in the filter box to search.
-- **Load current settings** shows what currently applies to that OU or group, and says whether it was set there or **inherited** from a parent OU.
-- **Import Admin console URL lists** copies the allowlist and blocklist you already have under Admin console URL blocking into the form, which helps with migration. If your old blocklist contains `*`, the mode switches to Allowlist.
+Click an OU or group on the left. The chips next to its name say:
+- **Locally applied**: settings are saved on this OU or group.
+- **Inherited**: it's using a parent OU's settings. Saving creates its own copy.
+- **Not configured**: nothing applies yet.
+- **Force-installed** / **Not force-installed**: whether the extension is installed for it (Step 1b).
+
+**Import Admin console URL lists** (top of **Rules**) copies the allowlist and blocklist you already have under Admin console URL blocking into the form, which helps with migration. If your old blocklist contains `*`, the mode switches to Allowlist.
 
 How Workspace decides which settings a user gets:
 - A sub-OU uses its parent's settings until you save settings on the sub-OU itself.
 - **Group settings override OU settings.** If a user is in several groups that all have settings, the group ranked highest wins. Set that order in the Admin console under **Devices → Chrome → Apps & extensions → Users & browsers → Groups**.
 
-### 3. Rules
+### 2. Rules
 
 - **Mode**: allowlist or blocklist.
 - **Allowed / Blocked sites**: one per line.
@@ -160,7 +209,7 @@ How Workspace decides which settings a user gets:
 - **Time zone**: set your school's time zone, such as `America/Denver`, so schedules don't follow a device whose clock is set wrong. Leave it blank to use each device's clock.
 - **Blocked-page message**: shown to the user, along with when access next changes.
 
-### 4. Schedules
+### 3. Schedules
 
 Each schedule has days, a start and end time (24-hour, like `08:00`), an optional mode switch, and extra sites to allow or block while it's on.
 
@@ -180,12 +229,12 @@ How schedules combine:
 - Same start and end means all day.
 - Devices check every minute, so changes happen on time without a network round-trip.
 
-### 5. Save
+### 4. Save
 
-- **Save** writes the settings to the selected OU or group. Devices pick up the change within minutes. `chrome://policy` → **Reload policies** applies it at once.
-- **Also set the extension to force-install here** is off by default. The Admin console setup in Step 1b already covers OUs that inherit it. Tick it only for a group, or an OU that overrides the install setting, and only after the extension has been added there by custom URL.
-- **Show JSON** shows exactly what gets stored.
-- **Remove settings** deletes this OU's or group's own settings so it inherits again.
+- When you change anything, a bar appears at the bottom with **Save** and **Cancel**. **Save** writes the settings to the selected OU or group. Devices pick up the change within minutes. `chrome://policy` → **Reload policies** applies it at once. Clicking another OU or group with unsaved changes asks first.
+- **Installation → Also set the extension to force-install here** is off by default. The Admin console setup in Step 1b already covers OUs that inherit it. Tick it only for a group, or an OU that overrides the install setting, and only after the extension has been added there by custom URL.
+- **Advanced → Show JSON** shows exactly what gets stored.
+- **Advanced → Inherit** (for an OU) or **Delete** (for a group) removes its own settings so it inherits again. It only appears when settings are saved there.
 
 **If saving to a group fails**, the extension usually hasn't been added to that group yet. Add it on the **Groups** tab as in Step 1b, then save again. As a fallback, you can paste the **Show JSON** output into the extension's **Policy for extensions** box in the Admin console.
 
@@ -206,7 +255,7 @@ How schedules combine:
 | What changed | What to do | ✅ It worked if |
 | --- | --- | --- |
 | `extension/` | Merge to `main`. The **Publish extension** action builds and publishes it. | The action is green, and the Pages URL shows the new version. On the pilot Chromebook, after **Update** in `chrome://extensions` (developer mode), the popup shows the same version. |
-| `dashboard/` | Paste the changed files into the Apps Script editor (or `clasp push`), then **Deploy → Manage deployments → Edit → Version: New version → Deploy**. | `diagnose` is all `OK`, and the `/exec` page loads your email and OUs. If the page looks frozen, press F12 and read the Console. |
+| `dashboard/` | If you set up [automatic deploys](#automatic-dashboard-deploys-optional), merge to `main` and the **Deploy dashboard** action does it. Otherwise paste the changed files into the Apps Script editor (or `clasp push`), then **Deploy → Manage deployments → Edit → Version: New version → Deploy**. | `diagnose` is all `OK`, and the `/exec` page loads your email and OUs. If the page looks frozen, press F12 and read the Console. |
 | Rules or schedules (from the dashboard) | **Save** to the OU or group. | **Check a user** shows no red ✖. On the device, after **Reload policies**, the popup's mode and "Last checked" time update. |
 
 ### Pilot checklist
