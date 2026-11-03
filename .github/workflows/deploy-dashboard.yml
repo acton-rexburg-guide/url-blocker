@@ -1,0 +1,52 @@
+# Pushes dashboard/ to the Apps Script project with clasp and updates the
+# existing web app deployment, so the /exec URL keeps working and serves the
+# new code. Needs the CLASPRC_JSON, SCRIPT_ID and DEPLOYMENT_ID repository
+# secrets (see README, "Automatic dashboard deploys"). Without them it skips.
+name: Deploy dashboard
+
+on:
+  push:
+    branches: [main]
+    paths: ['dashboard/**', '.github/workflows/deploy-dashboard.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dashboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+      DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ] || [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::notice::Skipping deploy: set the CLASPRC_JSON, SCRIPT_ID and DEPLOYMENT_ID secrets (see README)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Push and deploy with clasp
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          npm install -g @google/clasp@2.4.2
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"dashboard"}' "$SCRIPT_ID" > .clasp.json
+          clasp push --force
+          clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7} (run $GITHUB_RUN_NUMBER)"
+      - name: Remove credentials
+        if: always()
+        run: rm -f ~/.clasprc.json .clasp.json
