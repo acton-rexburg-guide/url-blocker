@@ -3,3 +3,5 @@ dist/
 *.zip
 *.pem
 CLAUDE.md
+.clasp.json
+.clasprc.json
