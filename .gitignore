@@ -2,3 +2,5 @@ node_modules/
 dist/
 *.zip
 *.pem
+.clasp.json
+.clasprc.json

@@ -197,7 +197,7 @@ function checkUser(email) {
   const add = (ok, label, detail) => checks.push({ ok, label, detail: detail || '' });
 
   const extId = getExtensionId();
-  add(!!extId, 'Extension ID saved in Setup', extId || 'Save it in section 1 first.');
+  add(!!extId, 'Extension ID saved in Setup', extId || 'Save it under Setup first.');
   if (!extId) return { email, checks };
 
   let user;
