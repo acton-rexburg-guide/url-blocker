@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseEntry, parseList, normalizeConfig, isScheduleActive, effectivePolicy, nextChange,
-  buildRules, pathRegex, localTime, PRIORITY, allowsPage, isSamePage,
+  buildRules, pathRegex, localTime, PRIORITY, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
 } from '../extension/lib/policy.js';
 
 const at = (day, hhmm) => {
@@ -121,4 +121,15 @@ test('isSamePage: another video is a different page', () => {
   assert.ok(!isSamePage(linked, 'https://www.youtube.com/watch?v=B'));
   assert.ok(!isSamePage(linked, 'https://www.youtube.com/shorts/A'));
   assert.ok(!isSamePage(linked, 'https://www.youtube.com/'));
+});
+
+test('isSettling: same-site URL changes are accepted only right after the link opens', () => {
+  const tab = { linked: 'https://www.youtube.com/watch?v=A&feature=youtu.be', linkedAt: 1000 };
+  const soon = 1000 + LINK_SETTLE_MS - 1;
+  assert.ok(isSettling(tab, 'https://www.youtube.com/watch?v=A&pp=xyz', 1500));
+  assert.ok(isSettling(tab, 'https://youtube.com/watch?v=B', soon));
+  assert.ok(!isSettling(tab, 'https://www.youtube.com/watch?v=B', 1000 + LINK_SETTLE_MS));
+  assert.ok(!isSettling(tab, 'https://example.com/', 1500));
+  assert.ok(!isSettling({ linked: tab.linked }, 'https://www.youtube.com/watch?v=B', 1500));
+  assert.ok(!isSettling(undefined, 'https://www.youtube.com/', 1500));
 });

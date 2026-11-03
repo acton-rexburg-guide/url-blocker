@@ -1,4 +1,4 @@
-import { normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule, allowsPage, isSamePage } from './lib/policy.js';
+import { normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS } from './lib/policy.js';
 import { readSettings } from './lib/settings.js';
 
 const dnr = chrome.declarativeNetRequest;
@@ -60,7 +60,12 @@ async function init() {
 // --- Links opened from approved sources ------------------------------------
 // The initiatorDomains rule in buildRules() lets the first page through. With
 // approvedSourceScope "site", the destination site then stays open in that tab
-// so the person can keep using it.
+// so the person can keep using it. With "link", only that page stays allowed,
+// after a short settling period while it loads (see LINK_SETTLE_MS in policy.js):
+//   - in-page URL changes on the same site update the linked page, and
+//   - a temporary session rule lets the site reload itself in that tab.
+// Per-tab state in storage.session "tabs":
+//   { url, opener?, rules: { site: ruleId }, linked?, linkedAt?, settleRule? }
 
 async function getTabs() {
   return (await chrome.storage.session.get('tabs')).tabs ?? {};
@@ -88,11 +93,21 @@ async function onTopFrameCommitted(details) {
   tab.url = details.url;
   delete tab.opener;
 
+  const now = Date.now();
   const followedLink = details.transitionType === 'link' || details.transitionType === 'form_submit';
   const fromSource = followedLink && from && config && hostMatches(hostOf(from), config.approvedSources);
-  // The page reached from an approved source; in-page navigations may stay on it.
-  if (fromSource) tab.linked = details.url;
-  else delete tab.linked;
+  if (fromSource) {
+    // The page reached from an approved source; in-page navigations may stay on it.
+    tab.linked = details.url;
+    tab.linkedAt = now;
+    if (config.approvedSourceScope === 'link') await startSettling(details.tabId, tab, config);
+  } else if (isSettling(tab, details.url, now)) {
+    // The linked page reloaded itself to a new URL while loading: keep it.
+    tab.linked = details.url;
+  } else {
+    delete tab.linked;
+    delete tab.linkedAt;
+  }
   if (config?.approvedSourceScope === 'site' && fromSource) {
     const site = siteOf(hostOf(details.url));
     if (site && !tab.rules[site] && !hostMatches(site, config.approvedSources)) {
@@ -114,12 +129,16 @@ async function onTopFrameHistoryUpdated(details) {
   const tab = tabs[details.tabId];
   const host = hostOf(details.url);
   const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
+  const settling = isSettling(tab, details.url, Date.now());
   const allowed =
+    settling ||
     allowsPage(details.url, policy, config) ||
     Object.keys(tab?.rules ?? {}).some((site) => hostMatches(host, [{ host: site }])) ||
     (tab?.linked && isSamePage(tab.linked, details.url));
   if (allowed) {
     if (tab) {
+      // While settling, the site's rewritten URL becomes the linked page.
+      if (settling) tab.linked = details.url;
       tab.url = details.url;
       await chrome.storage.session.set({ tabs });
     }
@@ -128,9 +147,47 @@ async function onTopFrameHistoryUpdated(details) {
   await chrome.tabs.update(details.tabId, { url: `${chrome.runtime.getURL('blocked.html')}#${details.url}` });
 }
 
+// Lets the linked site load fully in this tab (including reloads it does on
+// its own) for LINK_SETTLE_MS, then removes that permission again.
+async function startSettling(tabId, tab, config) {
+  if (tab.settleRule) await dnr.updateSessionRules({ removeRuleIds: [tab.settleRule] });
+  delete tab.settleRule;
+  const site = siteOf(hostOf(tab.linked));
+  if (!site || hostMatches(site, config.approvedSources)) return;
+  const id = await nextSessionRuleId();
+  await dnr.updateSessionRules({ addRules: [tabTrustRule(id, tabId, site, config)] });
+  tab.settleRule = id;
+  setTimeout(() => serial(() => endSettling(tabId, id)), LINK_SETTLE_MS);
+}
+
+async function endSettling(tabId, id) {
+  await dnr.updateSessionRules({ removeRuleIds: [id] });
+  const tabs = await getTabs();
+  if (tabs[tabId]?.settleRule === id) {
+    delete tabs[tabId].settleRule;
+    await chrome.storage.session.set({ tabs });
+  }
+}
+
+// Fallback in case the service worker stopped before endSettling() ran.
+async function removeStaleSettleRules() {
+  const tabs = await getTabs();
+  const now = Date.now();
+  const stale = [];
+  for (const tab of Object.values(tabs)) {
+    if (tab.settleRule && !(now - tab.linkedAt < LINK_SETTLE_MS)) {
+      stale.push(tab.settleRule);
+      delete tab.settleRule;
+    }
+  }
+  if (!stale.length) return;
+  await dnr.updateSessionRules({ removeRuleIds: stale });
+  await chrome.storage.session.set({ tabs });
+}
+
 async function forgetTab(tabId) {
   const tabs = await getTabs();
-  const ids = Object.values(tabs[tabId]?.rules ?? {});
+  const ids = [...Object.values(tabs[tabId]?.rules ?? {}), tabs[tabId]?.settleRule].filter(Boolean);
   if (ids.length) await dnr.updateSessionRules({ removeRuleIds: ids });
   delete tabs[tabId];
   await chrome.storage.session.set({ tabs });
@@ -140,7 +197,10 @@ async function clearTabTrust() {
   const existing = await dnr.getSessionRules();
   await dnr.updateSessionRules({ removeRuleIds: existing.map((r) => r.id) });
   const tabs = await getTabs();
-  for (const tab of Object.values(tabs)) tab.rules = {};
+  for (const tab of Object.values(tabs)) {
+    tab.rules = {};
+    delete tab.settleRule;
+  }
   await chrome.storage.session.set({ tabs });
 }
 
@@ -153,6 +213,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   // Re-read settings each minute in case a policy change event was missed.
   configPromise = null;
   serial(applyRules);
+  serial(removeStaleSettleRules);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

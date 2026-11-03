@@ -296,3 +296,23 @@ export function isSamePage(linked, url) {
     return false;
   }
 }
+
+// --- Settling period for "Allow only the linked page itself" ---------------
+// Many sites change their own URL while a page loads: YouTube opens
+// "watch?v=ID&feature=youtu.be" and then rewrites it. So for the first
+// LINK_SETTLE_MS after a page opens from an approved source, any URL change
+// on the same site is accepted and becomes the new "linked page". After that,
+// only isSamePage() changes are allowed. The trade-off: a click to another
+// page on that site within this window also gets through.
+export const LINK_SETTLE_MS = 5000;
+
+// tab: { linked: url opened from the approved source, linkedAt: ms timestamp }
+export function isSettling(tab, url, now) {
+  if (!tab?.linked || typeof tab.linkedAt !== 'number') return false;
+  if (!(now - tab.linkedAt >= 0 && now - tab.linkedAt < LINK_SETTLE_MS)) return false;
+  try {
+    return siteOf(new URL(url).hostname) === siteOf(new URL(tab.linked).hostname);
+  } catch {
+    return false;
+  }
+}
