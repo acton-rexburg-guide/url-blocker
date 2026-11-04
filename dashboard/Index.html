@@ -216,21 +216,6 @@
             </section>
 
             <section class="card">
-              <h2>Temporary allow</h2>
-              <div class="setting">
-                <div class="name">Admin password<span class="hint">Adds a Temporarily allow button to the blocked page. Whoever knows the password can allow the blocked site, or just that page, for a set number of minutes, in that person's browser only. Only a one-way hash is saved, but users can see the hash at chrome://policy, so pick a long password you don't use anywhere else.</span></div>
-                <div>
-                  <p id="pwState" class="hint" style="margin:0 0 8px">No password set. The blocked page has no Temporarily allow button.</p>
-                  <div class="inputrow">
-                    <input type="password" id="newPassword" autocomplete="new-password" placeholder="New password (at least 8 characters)" aria-label="New temporary-allow password">
-                    <button id="setPassword" type="button" class="outline">Set password</button>
-                  </div>
-                  <button id="removePassword" type="button" class="text" hidden>Remove password</button>
-                </div>
-              </div>
-            </section>
-
-            <section class="card">
               <h2>Schedules <span class="spacer"></span><button id="addSchedule" type="button" class="text">+ Add schedule</button></h2>
               <div class="setting">
                 <div class="name">Time zone<span class="hint">Blank uses each device's clock</span></div>
@@ -288,13 +273,27 @@
 
         <!-- Setup -->
         <div id="viewSetup" hidden>
-          <div class="pagehead"><div><div class="crumb">Setup</div><h1>Extension</h1></div></div>
+          <div class="pagehead"><div><div class="crumb">Setup</div><h1>Whole organization</h1></div></div>
           <section class="card">
             <div class="setting">
               <div class="name">Extension ID<span class="hint">Shown on the extension's GitHub Pages site</span></div>
               <div class="inputrow">
                 <input type="text" id="extId" placeholder="abcdefghijklmnopabcdefghijklmnop" aria-label="Extension ID">
                 <button id="saveExt" type="button">Save</button>
+              </div>
+            </div>
+          </section>
+          <section class="card">
+            <h2>Temporary allow</h2>
+            <div class="setting">
+              <div class="name">Admin password<span class="hint">One password for the whole organization. It adds a Temporarily allow button to the blocked page for everyone. Whoever knows the password can allow the blocked site, or just that page, for a set number of minutes, in that person's browser only. Only a one-way hash is saved, but users can see the hash at chrome://policy, so pick a long password you don't use anywhere else.</span></div>
+              <div>
+                <p id="pwState" class="hint" style="margin:0 0 8px">No password set. The blocked page has no Temporarily allow button.</p>
+                <div class="inputrow">
+                  <input type="password" id="newPassword" autocomplete="new-password" placeholder="New password (at least 8 characters)" aria-label="New temporary-allow password">
+                  <button id="setPassword" type="button" class="outline">Set password</button>
+                </div>
+                <button id="removePassword" type="button" class="text" hidden>Remove password</button>
               </div>
             </div>
           </section>
@@ -341,7 +340,6 @@
     let loadSeq = 0;          // ignores answers for a target the admin already moved away from
     const collapsed = {};
     let statusTimer;
-    let overridePassword = '';  // the saved hash, never the password itself
 
     function status(text, kind) {
       clearTimeout(statusTimer);
@@ -550,7 +548,6 @@
         blockEmbeds: $('blockEmbeds').checked,
         timezone: $('timezone').value.trim(),
         blockMessage: $('blockMessage').value.trim(),
-        overridePassword: overridePassword,
         schedules: [...document.querySelectorAll('#schedules .schedule')].map((n) => {
           const get = (k) => n.querySelector('[data-k=' + k + ']').value;
           const list = (k) => get(k).split('\n').map((s) => s.trim()).filter(Boolean);
@@ -574,7 +571,6 @@
       $('blockEmbeds').checked = c.blockEmbeds === true;
       $('timezone').value = c.timezone || '';
       $('blockMessage').value = c.blockMessage || '';
-      setPasswordHash(c.overridePassword || '', '');
       $('forceInstall').checked = false;
       $('schedules').replaceChildren();
       (c.schedules || []).forEach(addSchedule);
@@ -613,27 +609,36 @@
       return 'pbkdf2-sha256$' + iterations + '$' + b64(salt) + '$' + b64(bits);
     }
 
-    function setPasswordHash(hash, note) {
-      overridePassword = hash;
-      $('removePassword').hidden = !hash;
-      $('setPassword').textContent = hash ? 'Change password' : 'Set password';
-      $('pwState').textContent = note || (hash
-        ? 'A password is set. The blocked page shows a Temporarily allow button.'
-        : 'No password set. The blocked page has no Temporarily allow button.');
+    function showPasswordState(isSet) {
+      $('removePassword').hidden = !isSet;
+      $('setPassword').textContent = isSet ? 'Change password' : 'Set password';
+      $('pwState').textContent = isSet
+        ? 'A password is set. The blocked page shows a Temporarily allow button for everyone.'
+        : 'No password set. The blocked page has no Temporarily allow button.';
     }
 
-    $('setPassword').addEventListener('click', async () => {
+    function appliedNote(r) {
+      return ' Applied to ' + r.updated + ' OU(s)/group(s) with their own settings.'
+        + (r.failed.length ? ' Could not update: ' + r.failed.join(', ') + '. Set the password again to retry.' : '');
+    }
+
+    $('setPassword').addEventListener('click', () => {
       const pw = $('newPassword').value;
       if (pw.length < 8) return status('Use at least 8 characters for the password.', 'err');
-      try {
-        setPasswordHash(await hashPassword(pw), 'New password ready. Save to apply it.');
+      run('Saving password', async () => {
+        const r = await call('setOverridePassword', await hashPassword(pw));
         $('newPassword').value = '';
-        onEdit();
-      } catch (e) { status(e.message || String(e), 'err'); }
+        showPasswordState(true);
+        return { text: 'Password saved.' + appliedNote(r), kind: r.failed.length ? 'err' : 'ok' };
+      });
     });
     $('removePassword').addEventListener('click', () => {
-      setPasswordHash('', 'Password removed. Save to turn off Temporarily allow.');
-      onEdit();
+      if (!confirm('Remove the temporary-allow password? The Temporarily allow button goes away for everyone. Allows already granted stay until they run out.')) return;
+      run('Removing password', async () => {
+        const r = await call('setOverridePassword', '');
+        showPasswordState(false);
+        return { text: 'Password removed.' + appliedNote(r), kind: r.failed.length ? 'err' : 'ok' };
+      });
     });
 
     // --- Actions ---------------------------------------------------------------
@@ -721,6 +726,7 @@
       }
       $('who').textContent = data.user;
       $('extId').value = data.extensionId;
+      showPasswordState(data.passwordSet);
       renderTargets();
       if (!data.extensionId) { showView('setup'); return { text: 'Start by saving the extension ID.', kind: 'err' }; }
       return '';

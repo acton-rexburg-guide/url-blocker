@@ -211,14 +211,20 @@ How Workspace decides which settings a user gets:
 - **Also filter embedded frames**: off by default. Turn it on to also block blocked sites shown *inside* other pages, like an embedded YouTube player. It's stricter, but it can break widgets on allowed sites.
 - **Time zone**: set your school's time zone, such as `America/Denver`, so schedules don't follow a device whose clock is set wrong. Leave it blank to use each device's clock.
 - **Blocked-page message**: shown to the user, along with when access next changes.
-- **Temporary allow → Admin password**: adds a **Temporarily allow** button to the blocked page. Whoever knows the password (a teacher at the student's desk, say) picks:
-  - *The whole site*: every page on that site and its subdomains (`www.youtube.com` → `youtube.com`), including when embedded frames are filtered.
-  - *Only this page*: just that page, judged the same way as *Allow only the linked page itself* above. Small URL changes like `&t=30s` are fine; another video, or another page on the site, is blocked, including in-page switches on sites like YouTube.
-  - *How many minutes*: 1 to 1440. When time runs out, an open tab on that site goes back to the blocked page within a minute.
+- **Temporary allow**: see [Temporary allow password](#temporary-allow-password) below. It's set once for the whole organization under **Setup**, not per OU or group.
 
-  The allow applies only to the person signed in to that browser. It doesn't reach other users or devices. After 5 wrong passwords the form locks for a minute. The extension's popup lists what's temporarily allowed and until when.
+### Temporary allow password
 
-  The dashboard hashes the password in your browser (PBKDF2-SHA256) and saves only the hash. That hash is still visible to users at `chrome://policy`, so use a long password that isn't used for anything else, and change it here if it gets out. **Remove password** turns the button off. Allows already granted stay until they run out.
+**Setup → Temporary allow → Admin password** is one password for the whole organization. Once it's set, the blocked page shows a **Temporarily allow** button for everyone. Whoever knows the password (a teacher at the student's desk, say) picks:
+- *The whole site*: every page on that site and its subdomains (`www.youtube.com` → `youtube.com`), including when embedded frames are filtered.
+- *Only this page*: just that page, judged the same way as *Allow only the linked page itself* above. Small URL changes like `&t=30s` are fine; another video, or another page on the site, is blocked, including in-page switches on sites like YouTube.
+- *How many minutes*: 1 to 1440. When time runs out, an open tab on that site goes back to the blocked page within a minute.
+
+The allow applies only to the person signed in to that browser. It doesn't reach other users or devices. After 5 wrong passwords the form locks for a minute. The extension's popup lists what's temporarily allowed and until when.
+
+Setting, changing, or removing the password takes effect right away (no Save needed). The dashboard writes it into every OU and group that has its own settings, and into any you save later, because Chrome uses the most specific OU or group's settings as a whole and doesn't merge them.
+
+The dashboard hashes the password in your browser (PBKDF2-SHA256) and saves only the hash. That hash is still visible to users at `chrome://policy`, so use a long password that isn't used for anything else, and change it here if it gets out. **Remove password** turns the button off. Allows already granted stay until they run out.
 
 ### 3. Schedules
 

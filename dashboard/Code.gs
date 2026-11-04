@@ -45,10 +45,53 @@ function setExtensionId(id) {
   return id;
 }
 
+// --- Temporary-allow password (whole organization) -----------------------------
+// One hash for everyone. Chrome doesn't merge managed settings between an OU and
+// a group (the most specific one wins whole), so the hash is written into every
+// OU and group that has its own settings, and into each later save.
+
+function getOverridePassword() {
+  return PropertiesService.getScriptProperties().getProperty('OVERRIDE_PASSWORD') || '';
+}
+
+// `hash` comes from hashPassword() in Index.html; '' removes the password.
+// Returns how many OUs and groups were updated and which ones failed.
+function setOverridePassword(hash) {
+  hash = String(hash || '').trim();
+  // Only the hash made in the dashboard page is accepted, never a plain password.
+  if (hash && !PASSWORD_HASH.test(hash)) throw new Error('The temporary-allow password wasn\'t hashed correctly. Set it again.');
+  targetKey({ type: 'ou', id: 'x' }, true); // fails early without an extension ID
+  const props = PropertiesService.getScriptProperties();
+  if (hash) props.setProperty('OVERRIDE_PASSWORD', hash);
+  else props.deleteProperty('OVERRIDE_PASSWORD');
+
+  const targets = listOrgUnits().map((u) => ({ type: 'ou', id: u.id, label: u.path }))
+    .concat(listGroups().map((g) => ({ type: 'group', id: g.id, label: g.email })));
+  let updated = 0;
+  const failed = [];
+  targets.forEach((t) => {
+    try {
+      const r = loadTargetConfig(t);
+      if (!r.config || !r.setHere || (r.config.overridePassword || '') === hash) return;
+      const config = Object.assign({}, r.config, { overridePassword: hash });
+      policyApi(t.type === 'group' ? 'policies/groups:batchModify' : 'policies/orgunits:batchModify', { requests: [{
+        policyTargetKey: targetKey(t, true),
+        policyValue: { policySchema: CONFIG_SCHEMA, value: { managedConfiguration: toPolicyJson(config) } },
+        updateMask: 'managedConfiguration',
+      }] });
+      updated++;
+    } catch (e) {
+      failed.push(t.label);
+    }
+  });
+  return { updated, failed };
+}
+
 function getBootstrap() {
   return {
     user: Session.getActiveUser().getEmail(),
     extensionId: getExtensionId(),
+    passwordSet: !!getOverridePassword(),
     orgUnits: listOrgUnits(),
     groups: listGroups(),
   };
@@ -145,7 +188,7 @@ function loadTargetConfig(target) {
 }
 
 function saveTargetConfig(target, config, forceInstall) {
-  const clean = cleanConfig(config);
+  const clean = cleanConfig(Object.assign({}, config, { overridePassword: getOverridePassword() }));
   const key = targetKey(target, true);
   const requests = [];
   if (forceInstall) {

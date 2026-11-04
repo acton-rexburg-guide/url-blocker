@@ -23,7 +23,7 @@ function fakeWorkspace({ policies = {}, groups = [], props = {} } = {}) {
   const store = { ...props };
   const ctx = {
     console,
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] ?? null, setProperty: (k, v) => (store[k] = v) }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] ?? null, setProperty: (k, v) => (store[k] = v), deleteProperty: (k) => delete store[k] }) },
     Session: { getActiveUser: () => ({ getEmail: () => 'admin@school.org' }) },
     ScriptApp: { getOAuthToken: () => 'token' },
     Utilities: { formatDate: (d, tz) => { new Intl.DateTimeFormat('en', { timeZone: tz }); return '00'; } },
@@ -177,6 +177,52 @@ test('saveTargetConfig refuses before the extension ID is saved', () => {
   const { gs, requests } = fakeWorkspace();
   assert.throws(() => gs.saveTargetConfig({ type: 'ou', id: 'students' }, {}, false), /Save the extension ID/);
   assert.equal(requests.length, 0);
+});
+
+const HASH = 'pbkdf2-sha256$200000$' + 'A'.repeat(22) + '==$' + 'B'.repeat(43) + '=';
+const modifies = (requests) => requests.filter((r) => /batchModify$/.test(r.url));
+const storedConfig = (req) => fromWrapped(JSON.parse(req.body.requests[0].policyValue.value.managedConfiguration));
+const fromWrapped = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.Value]));
+
+test('saveTargetConfig always uses the organization-wide password', () => {
+  const { gs, requests } = fakeWorkspace({ props: { EXTENSION_ID: EXT_ID, OVERRIDE_PASSWORD: HASH } });
+  gs.saveTargetConfig({ type: 'group', id: 'g1' }, { mode: 'blocklist', overridePassword: '' }, false);
+  assert.equal(storedConfig(requests[0]).overridePassword, HASH);
+  const { gs: gs2, requests: r2 } = fakeWorkspace({ props: { EXTENSION_ID: EXT_ID } });
+  gs2.saveTargetConfig({ type: 'ou', id: 'students' }, { overridePassword: HASH }, false);
+  assert.equal(storedConfig(r2[0]).overridePassword, '');
+});
+
+test('setOverridePassword writes the hash to every OU and group with its own settings', () => {
+  const { gs, requests, store } = fakeWorkspace({
+    props: { EXTENSION_ID: EXT_ID },
+    groups: [{ id: 'g1', email: 'pilot@school.org' }, { id: 'g2', email: 'staff@school.org' }],
+    policies: {
+      'chrome.users.apps.ManagedConfiguration orgunits/root': configPolicy({ mode: { Value: 'blocklist' } }, 'orgunits/root'),
+      // Inherited from root, so it picks up the root's new settings by itself.
+      'chrome.users.apps.ManagedConfiguration orgunits/students': configPolicy({ mode: { Value: 'blocklist' } }, 'orgunits/root'),
+      'chrome.users.apps.ManagedConfiguration groups/g1': configPolicy({ mode: { Value: 'allowlist' }, allow: { Value: ['a.com'] } }, 'groups/g1'),
+    },
+  });
+  const r = plain(gs.setOverridePassword(HASH));
+  assert.deepEqual(r, { updated: 2, failed: [] });
+  assert.equal(store.OVERRIDE_PASSWORD, HASH);
+  assert.equal(gs.getBootstrap().passwordSet, true);
+  const writes = modifies(requests);
+  assert.deepEqual(writes.map((w) => w.body.requests[0].policyTargetKey.targetResource), ['orgunits/root', 'groups/g1']);
+  assert.match(writes[1].url, /groups:batchModify$/);
+  assert.deepEqual(plain(storedConfig(writes[1])), { mode: 'allowlist', allow: ['a.com'], overridePassword: HASH });
+
+  gs.setOverridePassword('');
+  assert.equal(store.OVERRIDE_PASSWORD, undefined);
+  assert.equal(gs.getBootstrap().passwordSet, false);
+});
+
+test('setOverridePassword refuses a plain-text password or a missing extension ID', () => {
+  assert.throws(() => fakeWorkspace({ props: { EXTENSION_ID: EXT_ID } }).gs.setOverridePassword('hunter22'), /password/);
+  const { gs, store } = fakeWorkspace();
+  assert.throws(() => gs.setOverridePassword(HASH), /Save the extension ID/);
+  assert.equal(store.OVERRIDE_PASSWORD, undefined);
 });
 
 // --- Check a user ------------------------------------------------------------
