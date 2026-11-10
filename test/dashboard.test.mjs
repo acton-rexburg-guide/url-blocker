@@ -97,6 +97,33 @@ test('the dashboard hashes passwords the way the extension checks them', async (
   assert.equal(normalizeConfig(JSON.parse(JSON.stringify(gs.cleanConfig({ overridePassword: stored })))).overridePassword, stored);
 });
 
+test('schedule times accept common 12-hour shorthands and reject nonsense', () => {
+  const ctx = vm.createContext({});
+  for (const name of ['parseClock', 'formatClock', 'storedClock']) {
+    const src = new RegExp('function ' + name + '[\\s\\S]*?\\n    }\\n').exec(scriptOf(INDEX));
+    assert.ok(src, name + ' not found in Index.html');
+    vm.runInContext(src[0], ctx);
+  }
+  const shown = (t) => { const m = ctx.parseClock(t); return m === null ? null : ctx.formatClock(m); };
+  const cases = {
+    '9am': '9:00 am', '9 AM': '9:00 am', '9a': '9:00 am', '9:30pm': '9:30 pm', '930pm': '9:30 pm', '9 p.m.': '9:00 pm',
+    '14': '2:00 pm', '14:30': '2:30 pm', '1430': '2:30 pm', '0830': '8:30 am', '9': '9:00 am', '0': '12:00 am',
+    '12am': '12:00 am', '12pm': '12:00 pm', '12:15 am': '12:15 am', 'noon': '12:00 pm', 'midnight': '12:00 am',
+    '24:00': '12:00 am', '9:00 am': '9:00 am', '3:00 pm': '3:00 pm',
+  };
+  for (const [input, want] of Object.entries(cases)) assert.equal(shown(input), want, input);
+  for (const bad of ['32', 'hello', '', '13pm', '0am', '9:60', '25:00', '24:30', '9:5', '12345', '-1']) assert.equal(ctx.parseClock(bad), null, bad);
+
+  // What the form stores is what Code.gs and the extension accept.
+  const { gs } = fakeWorkspace();
+  const sched = (start, end) => ({ schedules: [{ days: ['mon'], start, end }] });
+  const stored = (t) => ctx.storedClock(ctx.parseClock(t));
+  assert.deepEqual([stored('9am'), stored('2:30 pm'), stored('midnight')], ['09:00', '14:30', '00:00']);
+  const saved = gs.cleanConfig(sched(stored('9am'), stored('2:30pm'))).schedules[0];
+  const s = normalizeConfig(JSON.parse(JSON.stringify({ schedules: [saved] }))).schedules[0];
+  assert.deepEqual([s.start, s.end], [540, 870]);
+});
+
 test('cleanConfig refuses a plain-text password', () => {
   const { gs } = fakeWorkspace();
   assert.throws(() => gs.cleanConfig({ overridePassword: 'hunter22' }), /password/);

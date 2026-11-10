@@ -5,7 +5,7 @@ A website filter for Chromebooks and managed Chrome browsers, run from Google Wo
 | You asked for | How it works here |
 | --- | --- |
 | Allowlist **or** blocklist | Pick a **mode** per OU or group. Allowlist blocks everything except what you allow. Blocklist allows everything except what you block. |
-| Timers by day and time | **Schedules** add sites or switch the mode on chosen days and times, such as "School hours, Mon–Fri 08:00–15:00, allowlist". |
+| Timers by day and time | **Schedules** add sites or switch the mode on chosen days and times, such as "School hours, Mon–Fri 8:00 am–3:00 pm, allowlist". |
 | Links from a certain site always approved | **Approved sources**: any link opened from, say, `classroom.google.com` is allowed, whatever its domain. |
 | Tied to Workspace OUs and groups | Settings are stored as Chrome policy on an **organizational unit** or **group**. Workspace handles inheritance and who gets what. |
 | Don't break the Chromebook when blocking Google | The filter only acts on web pages opened in tabs. It never touches ChromeOS system traffic, so there's no list of system services to maintain. A built-in setting keeps Google sign-in pages open even if `google.com` is blocked. See [Essential services](#essential-services-and-blocking-google). |
@@ -228,16 +228,16 @@ The dashboard hashes the password in your browser (PBKDF2-SHA256) and saves only
 
 ### 3. Schedules
 
-Each schedule has days, a start and end time (24-hour, like `08:00`), an optional mode switch, and extra sites to allow or block while it's on.
+Each schedule has days, a start and end time (type `8am`, `3:30pm`, `14` or `noon`; the dashboard shows it as `8:00 am`), an optional mode switch, and extra sites to allow or block while it's on.
 
 Example setup for a student OU:
 
 | Schedule | Days | Time | Mode while on | Also allow |
 | --- | --- | --- | --- | --- |
 | *(base rules)* | – | – | Blocklist, block `games.com` | – |
-| School hours | Mon–Fri | 08:00–15:00 | Allowlist | `classroom.google.com`, `khanacademy.org` |
-| Lunch | Mon–Fri | 11:45–12:30 | – | `youtube.com` |
-| Overnight | Sun–Thu | 22:00–06:00 | Allowlist | – |
+| School hours | Mon–Fri | 8:00 am–3:00 pm | Allowlist | `classroom.google.com`, `khanacademy.org` |
+| Lunch | Mon–Fri | 11:45 am–12:30 pm | – | `youtube.com` |
+| Overnight | Sun–Thu | 10:00 pm–6:00 am | Allowlist | – |
 
 How schedules combine:
 - While schedules are on, their sites are added to the base lists.

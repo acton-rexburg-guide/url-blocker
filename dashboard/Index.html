@@ -93,6 +93,9 @@
     .days { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 12px; }
     .days label { display:flex; align-items:center; gap:4px; border:1px solid var(--border); border-radius:16px; padding:3px 12px 3px 8px; cursor:pointer; }
     .days label:has(input:checked) { background:var(--accent-bg); border-color:var(--accent); color:var(--accent); }
+    input.invalid { border-color:var(--err); }
+    input.invalid:focus { outline-color:var(--err); }
+    .fielderr { display:block; color:var(--err); font-size:12px; margin-top:4px; }
     .cardfoot { padding:8px 16px 16px; }
 
     /* Save bar and snackbar */
@@ -122,6 +125,11 @@
     .callout { border-left:4px solid var(--err); }
     code { font-family:ui-monospace, monospace; font-size:13px; background:var(--hover); padding:1px 4px; border-radius:3px; }
     [hidden] { display:none !important; }
+    details.qa { margin-bottom:12px; }
+    details.qa > summary { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:14px 20px; font-weight:500; cursor:pointer; list-style-position:inside; }
+    details.qa > summary:hover { background:var(--hover); }
+    details.qa[open] > summary { margin-bottom:12px; }
+    details.qa > .card, details.qa > .qabody { margin-left:16px; }
 
     @media (max-width: 760px) {
       body { display:block; height:auto; }
@@ -148,7 +156,7 @@
       <button type="button" data-view="settings" class="active">Settings</button>
       <button type="button" data-view="check">Check a user</button>
       <button type="button" data-view="setup">Setup</button>
-      <button type="button" data-view="rules">How rules combine</button>
+      <button type="button" data-view="qa">Q&amp;A</button>
     </nav>
     <span id="who">Loading…</span>
     <div id="progress" hidden></div>
@@ -309,66 +317,151 @@
           </section>
         </div>
 
-        <!-- How rules combine (reference only) -->
-        <div id="viewRules" hidden>
-          <div class="pagehead"><div><div class="crumb">Reference</div><h1>How rules combine</h1></div></div>
+        <!-- Q&A (reference only) -->
+        <div id="viewQa" hidden>
+          <div class="pagehead"><div><div class="crumb">Reference</div><h1>Q&amp;A</h1></div></div>
 
-          <section class="card">
-            <h2>Admin console URL blocking and this filter</h2>
-            <div class="pad">
-              <p>They are two separate filters, and neither can override the other. A page opens only if <strong>both</strong> allow it, so the stricter one always wins.</p>
-            </div>
-            <div class="tablewrap">
-              <table class="grid">
-                <thead><tr><th>Admin console URL blocking</th><th>This filter</th><th>Result</th></tr></thead>
-                <tbody>
-                  <tr><td>Allowed</td><td>Blocked</td><td><strong>Blocked</strong> by this filter</td></tr>
-                  <tr><td>Blocked</td><td>Allowed</td><td><strong>Blocked</strong> by Chrome</td></tr>
-                  <tr><td>Allowed or not listed</td><td>Allowed</td><td>Opens</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="pad">
-              <p class="hint">Allowing a site here can't undo a block in the Admin console, and an Admin console allow can't undo a block here. To avoid confusion, move your lists here with <strong>Import Admin console URL lists</strong> and then clear them in the Admin console.</p>
-            </div>
-          </section>
+          <details class="qa">
+            <summary>How do rules interact with each other and with Google Admin?</summary>
+            <div class="qabody">
+              <section class="card">
+                <h2>Admin console URL blocking and this filter</h2>
+                <div class="pad">
+                  <p>They are two separate filters, and neither can override the other. A page opens only if <strong>both</strong> allow it, so the stricter one always wins.</p>
+                </div>
+                <div class="tablewrap">
+                  <table class="grid">
+                    <thead><tr><th>Admin console URL blocking</th><th>This filter</th><th>Result</th></tr></thead>
+                    <tbody>
+                      <tr><td>Allowed</td><td>Blocked</td><td><strong>Blocked</strong> by this filter</td></tr>
+                      <tr><td>Blocked</td><td>Allowed</td><td><strong>Blocked</strong> by Chrome</td></tr>
+                      <tr><td>Allowed or not listed</td><td>Allowed</td><td>Opens</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="pad">
+                  <p class="hint">Allowing a site here can't undo a block in the Admin console, and an Admin console allow can't undo a block here. To avoid confusion, move your lists here with <strong>Import Admin console URL lists</strong> and then clear them in the Admin console.</p>
+                </div>
+              </section>
 
-          <section class="card">
-            <h2>Organizational units and groups</h2>
-            <div class="pad">
-              <p>This works the same way for this filter and for Admin console URL blocking. Each user gets the settings of exactly one OU or group:</p>
+              <section class="card">
+                <h2>Organizational units and groups</h2>
+                <div class="pad">
+                  <p>This works the same way for this filter and for Admin console URL blocking. Each user gets the settings of exactly one OU or group:</p>
+                  <ol>
+                    <li><strong>A group beats an OU.</strong> If any of the user's groups has its own settings, the group's settings are used instead of the OU's.</li>
+                    <li><strong>Several groups:</strong> the group ranked highest wins. Set the order in the Admin console under Devices &rarr; Chrome &rarr; Apps &amp; extensions &rarr; Users &amp; browsers &rarr; Groups.</li>
+                    <li><strong>Sub-OUs:</strong> the closest OU with its own settings wins. A sub-OU uses its parent's settings until you save settings on it.</li>
+                  </ol>
+                  <p><strong>Settings are never merged.</strong> The winner's mode, lists and schedules all apply, and everything else is ignored. For example, if a student's OU uses allowlist mode and one of their groups uses blocklist mode, the group's blocklist applies and the OU's allowlist doesn't apply at all.</p>
+                </div>
+              </section>
+
+              <section class="card">
+                <h2>Allowed vs. blocked within one set of settings</h2>
+                <div class="pad">
+                  <p>The first rule below that matches a page decides it:</p>
+                  <ol>
+                    <li>Google sign-in and account pages, if <em>Never block Google sign-in and account pages</em> is on</li>
+                    <li>Approved sources, and temporary allows</li>
+                    <li><strong>Allowed sites</strong></li>
+                    <li><strong>Blocked sites</strong></li>
+                    <li>In allowlist mode, everything else is blocked. In blocklist mode, everything else is allowed.</li>
+                  </ol>
+                  <p>Schedules that are on add their sites to the allowed and blocked lists. If several schedules change the mode at the same time, the one lowest in the list wins.</p>
+                </div>
+              </section>
+
+              <section class="card callout">
+                <h2>Difference from the Admin console: allowed always beats blocked</h2>
+                <div class="pad">
+                  <p><strong>Admin console:</strong> the <em>most specific</em> entry wins. With <code>youtube.com</code> allowed and <code>youtube.com/shorts</code> blocked, Shorts is blocked.</p>
+                  <p><strong>This filter:</strong> an allowed entry wins <em>no matter how specific the blocked entry is</em>. With the same two entries, Shorts <strong>stays open</strong>.</p>
+                  <p>Here, only the opposite pattern works: block the whole site and allow a part of it, for example block <code>youtube.com</code> and allow <code>youtube.com/edu</code>. After importing Admin console lists, check for blocked entries that sit inside allowed sites.</p>
+                </div>
+              </section>
+            </div>
+          </details>
+
+          <details class="qa">
+            <summary>A site isn't blocked, but chrome://policy shows the right settings. Why?</summary>
+            <div class="card pad">
+              <p>Settings arriving on the device only means Chrome has them. Check these, in order:</p>
               <ol>
-                <li><strong>A group beats an OU.</strong> If any of the user's groups has its own settings, the group's settings are used instead of the OU's.</li>
-                <li><strong>Several groups:</strong> the group ranked highest wins. Set the order in the Admin console under Devices &rarr; Chrome &rarr; Apps &amp; extensions &rarr; Users &amp; browsers &rarr; Groups.</li>
-                <li><strong>Sub-OUs:</strong> the closest OU with its own settings wins. A sub-OU uses its parent's settings until you save settings on it.</li>
+                <li><strong>Is the site allowed somewhere?</strong> Allowed always beats blocked. Look in <strong>Allowed sites</strong>, in the <strong>Also allow</strong> list of every schedule that's on at the same time, and in <strong>Approved sources</strong>. A domain covers its subdomains, so allowing <code>google.com</code> also allows <code>sites.google.com</code>.</li>
+                <li><strong>Was the page opened from an approved source,</strong> or does someone have a <strong>Temporarily allow</strong> in effect? Both let pages through on purpose.</li>
+                <li><strong>Was the tab already open?</strong> Pages are checked as they load. A tab that was open before the rule took effect stays open until it reloads or goes to another page.</li>
+                <li><strong>Is the schedule actually on?</strong> See the next question.</li>
+                <li><strong>Is the extension running?</strong> Click its toolbar icon on the device. It should say <em>Settings from: Google Admin console</em> and show the mode and schedules you expect.</li>
               </ol>
-              <p><strong>Settings are never merged.</strong> The winner's mode, lists and schedules all apply, and everything else is ignored. For example, if a student's OU uses allowlist mode and one of their groups uses blocklist mode, the group's blocklist applies and the OU's allowlist doesn't apply at all.</p>
             </div>
-          </section>
+          </details>
 
-          <section class="card">
-            <h2>Allowed vs. blocked within one set of settings</h2>
-            <div class="pad">
-              <p>The first rule below that matches a page decides it:</p>
+          <details class="qa">
+            <summary>My schedule doesn't turn on (or off) at the right time.</summary>
+            <div class="card pad">
+              <ul>
+                <li><strong>Check AM and PM.</strong> Open the schedule and make sure the start and end show the times you mean, such as <em>2:00 pm</em> rather than <em>2:00 am</em>.</li>
+                <li><strong>Check the days.</strong> An end time earlier than the start runs past midnight, and it belongs to the day it <em>starts</em> on. A Friday 10:00 pm&ndash;6:00 am schedule runs into Saturday morning.</li>
+                <li><strong>Check the time zone.</strong> If <strong>Time zone</strong> is blank, each device uses its own clock, which may be wrong or set to another zone. Set your school's zone, such as <code>America/Denver</code>.</li>
+                <li><strong>Same start and end</strong> means all day on the chosen days.</li>
+                <li>On the device, the extension's popup lists the schedules that are on right now.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="qa">
+            <summary>A site is blocked, but it's on my allowed list.</summary>
+            <div class="card pad">
+              <ul>
+                <li><strong>Admin console URL blocking</strong> is a separate filter. If the site is blocked there (Devices &rarr; Chrome &rarr; Settings &rarr; URL blocking), Chrome shows its own block page and nothing here can undo it.</li>
+                <li><strong>A different OU or group may apply.</strong> Settings are never merged: a group's settings replace the OU's. Use <strong>Check a user</strong> to see which settings that person actually gets.</li>
+                <li><strong>A path entry only covers that path.</strong> <code>youtube.com/edu</code> doesn't allow the YouTube home page.</li>
+                <li><strong>The page may use other sites.</strong> In allowlist mode, a page that sends people to another domain (for example a sign-in page on a different site) needs that domain allowed too. With <strong>Also filter embedded frames</strong> on, embedded videos and widgets need their sites allowed as well.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="qa">
+            <summary>I saved changes, but a device still has the old settings.</summary>
+            <div class="card pad">
+              <ul>
+                <li>Devices pick up changes within a few minutes. To apply them at once, open <code>chrome://policy</code> on the device and click <strong>Reload policies</strong>.</li>
+                <li>Make sure you saved to the OU or group that person is in. <strong>Check a user</strong> shows which one wins.</li>
+                <li>The person must be signed in to Chrome with their school account. The settings follow the account, not the device.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="qa">
+            <summary>The extension's popup says "Not configured" or the extension is missing.</summary>
+            <div class="card pad">
+              <ul>
+                <li><strong>Missing from <code>chrome://extensions</code>:</strong> the extension isn't force-installed for that person. Run <strong>Check a user</strong>. It flags a missing install.</li>
+                <li><strong>"Not configured":</strong> no settings reach that person. Save settings on their OU, a parent OU, or one of their groups.</li>
+                <li><strong>"Waiting for policy to load":</strong> Chrome hasn't finished loading policy. Wait a minute, or click <strong>Reload policies</strong> on <code>chrome://policy</code>.</li>
+                <li>Check the <strong>Extension ID</strong> under <strong>Setup</strong>. Settings saved for a different ID never reach the extension.</li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="qa">
+            <summary>The Temporarily allow button doesn't appear on the blocked page.</summary>
+            <div class="card pad">
+              <p>The button only appears once an admin password is set under <strong>Setup &rarr; Temporary allow</strong>. If a password is set and the button is still missing, setting it may have failed for that person's OU or group (the message after setting it lists any it couldn't update). Set the password again, then click <strong>Reload policies</strong> on <code>chrome://policy</code> on the device.</p>
+            </div>
+          </details>
+
+          <details class="qa">
+            <summary>How do I get help with a problem on one device?</summary>
+            <div class="card pad">
               <ol>
-                <li>Google sign-in and account pages, if <em>Never block Google sign-in and account pages</em> is on</li>
-                <li>Approved sources, and temporary allows</li>
-                <li><strong>Allowed sites</strong></li>
-                <li><strong>Blocked sites</strong></li>
-                <li>In allowlist mode, everything else is blocked. In blocklist mode, everything else is allowed.</li>
+                <li>Run <strong>Check a user</strong> with that person's email and click <strong>Copy report</strong>.</li>
+                <li>On their device, click the extension's toolbar icon, then <strong>Copy diagnostics</strong>. It shows the device's time and time zone, the settings the extension received, and the rules it has in place.</li>
+                <li>Share both, along with the site and the time it happened.</li>
               </ol>
-              <p>Schedules that are on add their sites to the allowed and blocked lists. If several schedules change the mode at the same time, the one lowest in the list wins.</p>
             </div>
-          </section>
-
-          <section class="card callout">
-            <h2>Difference from the Admin console: allowed always beats blocked</h2>
-            <div class="pad">
-              <p><strong>Admin console:</strong> the <em>most specific</em> entry wins. With <code>youtube.com</code> allowed and <code>youtube.com/shorts</code> blocked, Shorts is blocked.</p>
-              <p><strong>This filter:</strong> an allowed entry wins <em>no matter how specific the blocked entry is</em>. With the same two entries, Shorts <strong>stays open</strong>.</p>
-              <p>Here, only the opposite pattern works: block the whole site and allow a part of it, for example block <code>youtube.com</code> and allow <code>youtube.com/edu</code>. After importing Admin console lists, check for blocked entries that sit inside allowed sites.</p>
-            </div>
-          </section>
+          </details>
         </div>
       </div>
     </main>
@@ -385,8 +478,8 @@
     <div class="schedule">
       <div class="schedgrid">
         <div><label>Name</label><input type="text" data-k="name" placeholder="School hours"></div>
-        <div><label>Start</label><input type="text" data-k="start" placeholder="08:00"></div>
-        <div><label>End</label><input type="text" data-k="end" placeholder="15:00"></div>
+        <div><label>Start</label><input type="text" data-k="start" data-time placeholder="8:00 am" autocomplete="off"><span class="fielderr" hidden></span></div>
+        <div><label>End</label><input type="text" data-k="end" data-time placeholder="3:00 pm" autocomplete="off"><span class="fielderr" hidden></span></div>
         <div><label>Mode while on</label>
           <select data-k="mode"><option value="">No change</option><option value="allowlist">Allowlist</option><option value="blocklist">Blocklist</option></select>
         </div>
@@ -461,7 +554,7 @@
       $('viewSettings').hidden = view !== 'settings';
       $('viewCheck').hidden = view !== 'check';
       $('viewSetup').hidden = view !== 'setup';
-      $('viewRules').hidden = view !== 'rules';
+      $('viewQa').hidden = view !== 'qa';
       document.querySelectorAll('.appnav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
       updateSaveBar();
     }
@@ -590,6 +683,58 @@
       inst.title = 'Install type: ' + r.installType;
     }
 
+    // --- Times -----------------------------------------------------------------
+    // Schedules are stored as 24-hour "HH:MM" (what the extension reads), but
+    // shown and typed as 12-hour times. Accepts shorthands like "9am", "9:30p",
+    // "930pm", "14", "1430", "noon" and "midnight". Returns minutes since
+    // midnight, or null if the text isn't a time.
+    function parseClock(text) {
+      const s = String(text || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '');
+      if (s === 'noon') return 720;
+      if (s === 'midnight') return 0;
+      const m = /^(\d{1,2})(?::?(\d{2}))?(a|am|p|pm)?$/.exec(s);
+      if (!m) return null;
+      let h = Number(m[1]);
+      const min = m[2] ? Number(m[2]) : 0;
+      if (min > 59) return null;
+      if (m[3]) {
+        if (h < 1 || h > 12) return null;
+        if (h === 12) h = 0;
+        if (m[3][0] === 'p') h += 12;
+      } else if (h === 24 && min === 0) {
+        h = 0;
+      } else if (h > 23) {
+        return null;
+      }
+      return h * 60 + min;
+    }
+    function formatClock(minutes) {
+      const h = Math.floor(minutes / 60) % 24;
+      const min = minutes % 60;
+      return (h % 12 || 12) + ':' + (min < 10 ? '0' : '') + min + (h < 12 ? ' am' : ' pm');
+    }
+    function storedClock(minutes) {
+      const h = Math.floor(minutes / 60) % 24;
+      const min = minutes % 60;
+      return (h < 10 ? '0' : '') + h + ':' + (min < 10 ? '0' : '') + min;
+    }
+    // Rewrites a time field in the standard form, or marks it as wrong.
+    // Returns the error message, or '' if the field is fine.
+    function checkTimeField(el, required) {
+      const text = el.value.trim();
+      const minutes = parseClock(text);
+      let err = '';
+      if (!text) err = required ? 'Enter a time.' : '';
+      else if (minutes === null) err = 'Enter a time like 8:00 am or 3:30 pm.';
+      else el.value = formatClock(minutes);
+      el.classList.toggle('invalid', !!err);
+      el.setAttribute('aria-invalid', err ? 'true' : 'false');
+      const msg = el.parentNode.querySelector('.fielderr');
+      msg.textContent = err;
+      msg.hidden = !err;
+      return err;
+    }
+
     // --- Form ------------------------------------------------------------------
 
     function addSchedule(s = {}) {
@@ -597,6 +742,12 @@
       node.querySelectorAll('[data-k]').forEach((el) => {
         const v = s[el.dataset.k];
         el.value = Array.isArray(v) ? v.join('\n') : v || '';
+        if (el.hasAttribute('data-time')) {
+          const minutes = parseClock(el.value);
+          if (minutes !== null) el.value = formatClock(minutes);
+          el.addEventListener('blur', () => { checkTimeField(el, false); onEdit(); });
+          el.addEventListener('input', () => { if (el.classList.contains('invalid') && parseClock(el.value) !== null) checkTimeField(el, false); });
+        }
       });
       const days = node.querySelector('.days');
       DAYS.forEach(([k, label]) => {
@@ -624,8 +775,10 @@
         schedules: [...document.querySelectorAll('#schedules .schedule')].map((n) => {
           const get = (k) => n.querySelector('[data-k=' + k + ']').value;
           const list = (k) => get(k).split('\n').map((s) => s.trim()).filter(Boolean);
+          // Stored as 24-hour time; anything unreadable is left as typed for Save to reject.
+          const time = (k) => { const m = parseClock(get(k)); return m === null ? get(k).trim() : storedClock(m); };
           return {
-            name: get('name').trim(), start: get('start').trim(), end: get('end').trim(), mode: get('mode'),
+            name: get('name').trim(), start: time('start'), end: time('end'), mode: get('mode'),
             days: [...n.querySelectorAll('.days input:checked')].map((c) => c.value),
             allow: list('allow'), block: list('block'),
           };
@@ -745,6 +898,11 @@
 
     $('save').addEventListener('click', () => run('Saving', async () => {
       const t = target();
+      const badTimes = [...document.querySelectorAll('#schedules [data-time]')].filter((el) => checkTimeField(el, true));
+      if (badTimes.length) {
+        badTimes[0].focus();
+        return { text: 'Fix the schedule times marked in red, then Save again.', kind: 'err' };
+      }
       const forced = $('forceInstall').checked;
       const saved = await call('saveTargetConfig', t, readForm(), forced);
       fillForm(saved);
