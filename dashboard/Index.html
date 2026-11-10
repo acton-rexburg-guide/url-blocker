@@ -112,6 +112,15 @@
     .checks .bad::before { content:'\2716  '; color:var(--err); }
     .checks .info::before { content:'\2022  '; color:var(--muted); }
     .pad { padding:16px 24px; }
+    .pad p, .pad ol, .pad ul { margin:0 0 10px; }
+    .pad > :last-child { margin-bottom:0; }
+    .pad li { margin-bottom:4px; }
+    .tablewrap { overflow-x:auto; padding:0 24px 16px; }
+    table.grid { border-collapse:collapse; width:100%; font-size:14px; }
+    table.grid th, table.grid td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); }
+    table.grid th { color:var(--muted); font-weight:500; }
+    .callout { border-left:4px solid var(--err); }
+    code { font-family:ui-monospace, monospace; font-size:13px; background:var(--hover); padding:1px 4px; border-radius:3px; }
     [hidden] { display:none !important; }
 
     @media (max-width: 760px) {
@@ -139,6 +148,7 @@
       <button type="button" data-view="settings" class="active">Settings</button>
       <button type="button" data-view="check">Check a user</button>
       <button type="button" data-view="setup">Setup</button>
+      <button type="button" data-view="rules">How rules combine</button>
     </nav>
     <span id="who">Loading…</span>
     <div id="progress" hidden></div>
@@ -298,6 +308,68 @@
             </div>
           </section>
         </div>
+
+        <!-- How rules combine (reference only) -->
+        <div id="viewRules" hidden>
+          <div class="pagehead"><div><div class="crumb">Reference</div><h1>How rules combine</h1></div></div>
+
+          <section class="card">
+            <h2>Admin console URL blocking and this filter</h2>
+            <div class="pad">
+              <p>They are two separate filters, and neither can override the other. A page opens only if <strong>both</strong> allow it, so the stricter one always wins.</p>
+            </div>
+            <div class="tablewrap">
+              <table class="grid">
+                <thead><tr><th>Admin console URL blocking</th><th>This filter</th><th>Result</th></tr></thead>
+                <tbody>
+                  <tr><td>Allowed</td><td>Blocked</td><td><strong>Blocked</strong> by this filter</td></tr>
+                  <tr><td>Blocked</td><td>Allowed</td><td><strong>Blocked</strong> by Chrome</td></tr>
+                  <tr><td>Allowed or not listed</td><td>Allowed</td><td>Opens</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pad">
+              <p class="hint">Allowing a site here can't undo a block in the Admin console, and an Admin console allow can't undo a block here. To avoid confusion, move your lists here with <strong>Import Admin console URL lists</strong> and then clear them in the Admin console.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>Organizational units and groups</h2>
+            <div class="pad">
+              <p>This works the same way for this filter and for Admin console URL blocking. Each user gets the settings of exactly one OU or group:</p>
+              <ol>
+                <li><strong>A group beats an OU.</strong> If any of the user's groups has its own settings, the group's settings are used instead of the OU's.</li>
+                <li><strong>Several groups:</strong> the group ranked highest wins. Set the order in the Admin console under Devices &rarr; Chrome &rarr; Apps &amp; extensions &rarr; Users &amp; browsers &rarr; Groups.</li>
+                <li><strong>Sub-OUs:</strong> the closest OU with its own settings wins. A sub-OU uses its parent's settings until you save settings on it.</li>
+              </ol>
+              <p><strong>Settings are never merged.</strong> The winner's mode, lists and schedules all apply, and everything else is ignored. For example, if a student's OU uses allowlist mode and one of their groups uses blocklist mode, the group's blocklist applies and the OU's allowlist doesn't apply at all.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>Allowed vs. blocked within one set of settings</h2>
+            <div class="pad">
+              <p>The first rule below that matches a page decides it:</p>
+              <ol>
+                <li>Google sign-in and account pages, if <em>Never block Google sign-in and account pages</em> is on</li>
+                <li>Approved sources, and temporary allows</li>
+                <li><strong>Allowed sites</strong></li>
+                <li><strong>Blocked sites</strong></li>
+                <li>In allowlist mode, everything else is blocked. In blocklist mode, everything else is allowed.</li>
+              </ol>
+              <p>Schedules that are on add their sites to the allowed and blocked lists. If several schedules change the mode at the same time, the one lowest in the list wins.</p>
+            </div>
+          </section>
+
+          <section class="card callout">
+            <h2>Difference from the Admin console: allowed always beats blocked</h2>
+            <div class="pad">
+              <p><strong>Admin console:</strong> the <em>most specific</em> entry wins. With <code>youtube.com</code> allowed and <code>youtube.com/shorts</code> blocked, Shorts is blocked.</p>
+              <p><strong>This filter:</strong> an allowed entry wins <em>no matter how specific the blocked entry is</em>. With the same two entries, Shorts <strong>stays open</strong>.</p>
+              <p>Here, only the opposite pattern works: block the whole site and allow a part of it, for example block <code>youtube.com</code> and allow <code>youtube.com/edu</code>. After importing Admin console lists, check for blocked entries that sit inside allowed sites.</p>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   </div>
@@ -389,6 +461,7 @@
       $('viewSettings').hidden = view !== 'settings';
       $('viewCheck').hidden = view !== 'check';
       $('viewSetup').hidden = view !== 'setup';
+      $('viewRules').hidden = view !== 'rules';
       document.querySelectorAll('.appnav button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
       updateSaveBar();
     }
