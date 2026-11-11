@@ -1,5 +1,5 @@
 import {
-  normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, tabTrustRule, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
+  normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, siteTrusts, tabTrustRule, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
   activeTempAllows, tempAllows, makeTempAllow, verifyPassword,
 } from './lib/policy.js';
 import { readSettings } from './lib/settings.js';
@@ -139,7 +139,7 @@ function tabAllows(tab, url, policy, config, temps, now) {
   return (
     isSettling(tab, url, now) ||
     allowsPage(url, policy, config, temps) ||
-    Object.keys(tab?.rules ?? {}).some((site) => hostMatches(host, [{ host: site }])) ||
+    Object.keys(tab?.rules ?? {}).some((site) => siteTrusts(site, host)) ||
     !!(tab?.linked && isSamePage(tab.linked, url))
   );
 }

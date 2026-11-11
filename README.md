@@ -202,6 +202,7 @@ How Workspace decides which settings a user gets:
   - **Allowed beats blocked.** In blocklist mode, the allowed list holds exceptions. For example, block `youtube.com` and allow `youtube.com/edu`.
 - **Approved sources**: any link clicked or opened from these sites is allowed, even if its domain would be blocked. That covers the same tab, a new tab, and redirects.
   - *Keep the whole linked site open in that tab* (default): after a student clicks a Classroom link to `khanacademy.org`, they can keep browsing Khan Academy in that tab. Leaving that site, or opening it fresh in another tab, follows the normal rules.
+    - "Site" means that exact host and its `www.` twin, not other subdomains: a link to `www.bandlab.com` keeps `bandlab.com` open, but `edu.bandlab.com` still follows the normal rules. (Entries in the allowed and blocked lists still cover subdomains.)
   - *Allow only the linked page itself*: just the page that was opened. Moving to another page on that site is blocked, including on sites like YouTube that switch pages without a full reload (clicking another video).
     - **8-second settling period.** Many sites change their own URL while a page loads (YouTube opens `watch?v=ID&feature=youtu.be`, then rewrites it). So for the first 8 seconds after the link opens, any change on the same site is accepted and becomes the allowed page. After that, only the page itself is allowed; small URL changes like adding `&t=30s` are still fine.
     - Trade-off: clicking to another page on that site within those first 8 seconds also gets through.

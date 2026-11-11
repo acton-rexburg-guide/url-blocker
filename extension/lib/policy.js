@@ -260,9 +260,21 @@ export function buildRules(policy, config, extensionId, temps = []) {
   return rules;
 }
 
+// A site reached from an approved source is trusted in its tab: every page on
+// that host and its "www." twin, but not other subdomains. A link to
+// www.bandlab.com trusts bandlab.com and www.bandlab.com, not edu.bandlab.com.
+// (Block and allow list entries still cover subdomains; this is only the trust.)
+export function trustRegex(site) {
+  return `^https?://(www\\.)?${escapeRegex(site)}(:[0-9]+)?([/?#].*)?$`;
+}
+
+export function siteTrusts(site, host) {
+  return siteOf(String(host).toLowerCase()) === site;
+}
+
 // Session rule that keeps a site reached from an approved source open in that one tab.
 export function tabTrustRule(id, tabId, site, config) {
-  return { id, priority: PRIORITY.SOURCE, action: { type: 'allow' }, condition: { tabIds: [tabId], requestDomains: [site], resourceTypes: frameTypes(config) } };
+  return { id, priority: PRIORITY.SOURCE, action: { type: 'allow' }, condition: { tabIds: [tabId], regexFilter: trustRegex(site), resourceTypes: frameTypes(config) } };
 }
 
 // Whether the rules from buildRules() let `url` load as a top-level page on

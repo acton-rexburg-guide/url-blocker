@@ -4,7 +4,26 @@ import {
   parseEntry, parseList, normalizeConfig, isScheduleActive, effectivePolicy, nextChange,
   buildRules, pathRegex, localTime, PRIORITY, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
   makeTempAllow, activeTempAllows, tempAllows, pageRegex, hashPassword, verifyPassword, parsePasswordHash,
+  trustRegex, siteTrusts, tabTrustRule, siteOf,
 } from '../extension/lib/policy.js';
+
+test('approved-source trust covers the site and its www twin, not other subdomains', () => {
+  const site = siteOf('www.bandlab.com');
+  const re = new RegExp(trustRegex(site));
+  for (const url of ['https://bandlab.com/', 'https://www.bandlab.com/library?x=1', 'http://bandlab.com:8080/a', 'https://bandlab.com']) {
+    assert.ok(re.test(url), url);
+    assert.ok(siteTrusts(site, new URL(url).hostname), url);
+  }
+  for (const url of ['https://edu.bandlab.com/', 'https://notbandlab.com/', 'https://bandlab.com.evil.net/', 'https://www.edu.bandlab.com/']) {
+    assert.ok(!re.test(url), url);
+    assert.ok(!siteTrusts(site, new URL(url).hostname), url);
+  }
+  const rule = tabTrustRule(7, 3, site, normalizeConfig({}));
+  assert.equal(rule.condition.requestDomains, undefined);
+  assert.equal(rule.condition.regexFilter, trustRegex(site));
+  assert.deepEqual(rule.condition.tabIds, [3]);
+  assert.equal(rule.priority, PRIORITY.SOURCE);
+});
 
 const at = (day, hhmm) => {
   const [h, m] = hhmm.split(':').map(Number);
