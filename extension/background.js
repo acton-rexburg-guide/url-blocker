@@ -1,6 +1,6 @@
 import {
   normalizeConfig, effectivePolicy, buildRules, localTime, hostMatches, siteOf, siteTrusts, tabTrustRule, allowsPage, isSamePage, isSettling, LINK_SETTLE_MS,
-  activeTempAllows, tempAllows, makeTempAllow, verifyPassword,
+  activeTempAllows, makeTempAllow, verifyPassword,
 } from './lib/policy.js';
 import { readSettings } from './lib/settings.js';
 
@@ -43,17 +43,21 @@ async function applyRules() {
   }
   const key = JSON.stringify(rules);
   const { appliedKey } = await chrome.storage.session.get('appliedKey');
+  let changed = false;
   if (key !== appliedKey) {
     try {
       const existing = await dnr.getDynamicRules();
       await dnr.updateDynamicRules({ removeRuleIds: existing.map((r) => r.id), addRules: rules });
       await chrome.storage.session.set({ appliedKey: key });
+      changed = true;
     } catch (e) {
       status.error = String(e?.message ?? e);
     }
   }
   await chrome.storage.session.set({ status });
-  if (config && expired.length) await closeExpired(config, temps, expired);
+  // New rules only stop new requests. A schedule starting, a policy change, or
+  // a temporary allow running out also has to reach pages already open.
+  if (config && (changed || expired.length)) await closeBlockedTabs(config, temps);
   scheduleExpiry(temps, now);
 }
 
@@ -87,15 +91,16 @@ function scheduleExpiry(temps, now) {
   expiryTimer = setTimeout(() => serial(applyRules), Math.min(next - now + 500, 2 ** 31 - 1));
 }
 
-// Sends tabs still showing a page whose allow ran out to the blocked page.
-async function closeExpired(config, temps, expired) {
+// Sends open tabs whose page the current rules no longer allow to the blocked
+// page. A site reached from an approved source stays open in its tab, the
+// same as it would for a new request in that tab.
+async function closeBlockedTabs(config, temps) {
   const now = Date.now();
   const policy = effectivePolicy(config, localTime(new Date(), config.timezone));
   const tabs = await getTabs();
   for (const t of await chrome.tabs.query({})) {
     const url = t.url ?? '';
     if (t.id === undefined || !/^https?:/.test(url)) continue;
-    if (!expired.some((e) => tempAllows(e, url))) continue;
     if (tabAllows(tabs[t.id], url, policy, config, temps, now)) continue;
     await chrome.tabs.update(t.id, { url: blockedPage(url) });
   }

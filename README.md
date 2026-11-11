@@ -246,6 +246,7 @@ How schedules combine:
 - An end time earlier than the start runs past midnight. Its days are the days it *starts* on.
 - Same start and end means all day.
 - Devices check every minute, so changes happen on time without a network round-trip.
+- When a schedule starts (or the settings change), tabs already open on a page that's now blocked switch to the blocked page within a minute. A site opened from an approved source stays open in its tab.
 
 ### 4. Save
 
